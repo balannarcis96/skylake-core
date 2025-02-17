@@ -1,0 +1,10 @@
+//!
+//! \file skl_core_tuning
+//!
+//! \brief Compile time values as config for the core skylake lib
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <Tune_SkylakeCoreLib_public.h>

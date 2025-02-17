@@ -1,0 +1,29 @@
+//!
+//! \file skl_string_literal
+//!
+//! \brief string literal constexpr type
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+using TStringLiteralSize = unsigned long long;
+
+template <TStringLiteralSize N>
+struct StringLiteral {
+    static constexpr TStringLiteralSize CBufferLength      = N;
+    static constexpr TStringLiteralSize CBufferBytesLength = N;
+    static constexpr TStringLiteralSize CLength            = N - 1;
+
+    constexpr explicit StringLiteral(const char (&string)[N]) noexcept {
+        for (TStringLiteralSize i = 0U; i < N; ++i) {
+            m_value[i] = string[i];
+        }
+    }
+
+    [[nodiscard]] constexpr const char* value() const noexcept { return m_value; }
+
+    char m_value[N];
+};
+} // namespace skl

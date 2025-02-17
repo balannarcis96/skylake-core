@@ -1,0 +1,46 @@
+//!
+//! \file skl_log
+//!
+//! \brief log utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <Tune_SkylakeCoreLib_public.h>
+
+#include "skl_logger/skl_slogger_fend.hpp"
+
+#define SKL_LOG_CONCATENATE_DETAIL(x, y) x##y
+#define SKL_LOG_CONCATENATE(x, y)        SKL_LOG_CONCATENATE_DETAIL(x, y)
+
+//[LibInit] Serialized logger utils using the fmt library
+#define SDEBUG(format, ...)   ::skl::skl_log<::skl::skl_log_internal::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SINFO(format, ...)    ::skl::skl_log<::skl::skl_log_internal::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SWARNING(format, ...) ::skl::skl_log<::skl::skl_log_internal::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SERROR(format, ...)   ::skl::skl_log<::skl::skl_log_internal::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SFATAL(format, ...)   ::skl::skl_log<::skl::skl_log_internal::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+
+// [LibInit] Trace call utility
+#define STRACE                                                                                                                                       \
+    struct SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) {                                                                                            \
+        const char* m_fn_name;                                                                                                                       \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &)             = delete;                     \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &) = delete;                     \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)                  = delete;                     \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)      = delete;                     \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const char* f_fn_name) noexcept                                                                 \
+            : m_fn_name(f_fn_name) {                                                                                                                 \
+            ::skl::skl_log<::skl::skl_log_internal::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, ">> {}", f_fn_name); \
+        }                                                                                                                                            \
+        ~SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)() noexcept {                                                                                   \
+            ::skl::skl_log<::skl::skl_log_internal::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, "<< {}", m_fn_name); \
+        }                                                                                                                                            \
+    } SKL_LOG_CONCATENATE(__TraceUtility_, __LINE__){__PRETTY_FUNCTION__};
+
+#define SKL_IP_TO_LOG(ip)   ((ip >> 24U) & 0xFFU), ((ip >> 16U) & 0xFFU), ((ip >> 8U) & 0xFFU), ip & 0xFFU
+#define SKL_IP_LOG_WILDCARD "{}.{}.{}.{}"
+
+#define SKL_MAC_TO_LOG(MAC)  i32(MAC[0U]), i32(MAC[1U]), i32(MAC[2U]), i32(MAC[3U]), i32(MAC[4U]), i32(MAC[5U])
+#define SKL_MAC_LOG_WILDCARD "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}"
+//Eg SDEBUG("asdasd " SKL_IP_LOG_WILDCARD " asdasd", SKL_IP_TO_LOG(ip))

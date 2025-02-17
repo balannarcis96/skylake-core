@@ -1,0 +1,17 @@
+//!
+//! \file skl_units
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template<typename _T>
+constexpr _T CMicrosecondsToSeconds(_T f_us) noexcept {
+    return double(f_us) * 0.00000001;
+}
+template<typename _T>
+constexpr _T CMilisecondsToSeconds(_T f_ms) noexcept {
+    return double(f_ms) * 0.00001;
+}
+}

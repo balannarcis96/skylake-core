@@ -1,0 +1,8 @@
+//!
+//! \file placement_new
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <new>

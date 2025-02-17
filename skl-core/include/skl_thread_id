@@ -1,0 +1,21 @@
+//!
+//! \file skl_thread_id
+//!
+//! \brief thread uuid untility
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+//! Init the current thread uuid
+[[nodiscard]] bool init_current_thread_id() noexcept;
+
+//! Safely acquire the current thread's uuid
+//! \remark calls init_current_thread_id() if necessary
+[[nodiscard]] unsigned int current_thread_id() noexcept;
+
+//! Unsafely acquire the current thread's uuid
+//! \remark a successful call to init_current_thread_id() must be done before calling
+[[nodiscard]] unsigned int current_thread_id_unsafe() noexcept;
+} // namespace skl

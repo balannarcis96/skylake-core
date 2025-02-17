@@ -1,0 +1,172 @@
+//!
+//! \file skl_entityid
+//!
+//! \brief core entity id structure
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_assert"
+
+namespace skl {
+namespace skl_entityid_internals {
+    template <bool>
+    struct __conditional {
+        template <typename _Tp, typename>
+        using type = _Tp;
+    };
+    template <>
+    struct __conditional<false> {
+        template <typename, typename _Up>
+        using type = _Up;
+    };
+    template <bool _Cond, typename _If, typename _Else>
+    using conditional_t = typename __conditional<_Cond>::template type<_If, _Else>;
+} // namespace skl_entityid_internals
+
+using entityid_type_t = u8;
+using entityid_raw_t  = u64;
+
+constexpr entityid_raw_t  CInvalidEntityId   = 0U;
+constexpr entityid_type_t CInvalidEntityType = 0U;
+
+template <typename _Data, bool _ExtendedIndex = false>
+struct EntityIdBase {
+    using index_t                                = skl_entityid_internals::conditional_t<_ExtendedIndex, u32, u16>;
+    static constexpr u32     CBasicIdMask        = 0xFFFF0000U;
+    static constexpr index_t CBasicIdMaxValue    = 0xFFFFU;
+    static constexpr u32     CExtendedIdMask     = 0xFFFFFF00U;
+    static constexpr u32     CExtendedIdMaxValue = 0x00FFFFFFU;
+    static constexpr bool    CExtendedIndex      = _ExtendedIndex;
+    using data_t                                 = _Data;
+
+    static_assert(sizeof(data_t) == sizeof(u32));
+
+    union description {
+        explicit constexpr description(entityid_raw_t Id) noexcept
+            : m_id{Id} { }
+        constexpr description(const description& fOther) noexcept
+            : m_id(fOther.m_id) { }
+        constexpr description& operator=(const description& fOther) noexcept {
+            SKL_ASSERT(this != &fOther);
+            m_id = fOther.m_id;
+            return *this;
+        }
+        constexpr description(description&& fOther) noexcept
+            : m_id(fOther.m_id) { }
+        constexpr description& operator=(description&& fOther) noexcept {
+            SKL_ASSERT(this != &fOther);
+            m_id = fOther.m_id;
+            return *this;
+        }
+        constexpr ~description() noexcept = default;
+
+        struct
+        {
+            entityid_type_t m_type;             //!< Entity type
+            u8              m_ext_index_part;   //!< Entity id extended index start
+            u16             m_basic_index_part; //!< Entity id basic index start/extended index continuation
+            u32             m_data;             //!< Entity id custom data
+        };
+
+        entityid_raw_t m_id;
+    };
+
+    constexpr EntityIdBase() noexcept
+        : m_id{0} { }
+    explicit constexpr EntityIdBase(entityid_raw_t f_raw_id) noexcept
+        : m_id{f_raw_id} { }
+    constexpr EntityIdBase(entityid_type_t f_type, index_t f_index, data_t f_data) noexcept {
+        auto& _desc{desc()};
+        _desc.m_data = *reinterpret_cast<u32*>(&f_data);
+
+        if constexpr (_ExtendedIndex) {
+            SKL_ASSERT(f_index <= CExtendedIdMaxValue);
+            reinterpret_cast<u32&>(_desc.m_id) = (static_cast<u32>(f_type) | ((f_index << 8) & CExtendedIdMask));
+        } else {
+            _desc.f_type             = f_type;
+            _desc.m_basic_index_part = f_index;
+        }
+    }
+    ~EntityIdBase() noexcept = default;
+
+    constexpr EntityIdBase(const EntityIdBase& f_other) noexcept            = default;
+    constexpr EntityIdBase& operator=(const EntityIdBase& f_other) noexcept = default;
+    constexpr EntityIdBase(EntityIdBase&& Other) noexcept                   = default;
+    constexpr EntityIdBase& operator=(EntityIdBase&& Other) noexcept        = default;
+
+    constexpr bool operator==(const EntityIdBase& f_other) const noexcept {
+        return m_id == f_other.m_id;
+    }
+
+    constexpr bool operator!=(const EntityIdBase& f_other) const noexcept {
+        return m_id != f_other.m_id;
+    }
+
+    constexpr void set_raw(entityid_raw_t f_raw_id) noexcept {
+        m_id = f_raw_id;
+    }
+
+    explicit constexpr operator entityid_raw_t() const noexcept {
+        return m_id;
+    }
+
+    explicit constexpr operator bool() const noexcept {
+        return false == is_none();
+    }
+
+    [[nodiscard]] constexpr entityid_raw_t raw() const noexcept {
+        return m_id;
+    }
+
+    [[nodiscard]] constexpr bool is_valid() const noexcept {
+        return (false == is_none()) && (CInvalidEntityType != type());
+    }
+
+    [[nodiscard]] constexpr bool is_none() const noexcept {
+        return CInvalidEntityId == m_id;
+    }
+
+    [[nodiscard]] constexpr bool is_type(entityid_type_t f_type) const noexcept {
+        return type() == f_type;
+    }
+
+    [[nodiscard]] constexpr entityid_type_t type() const noexcept {
+        return desc().m_type;
+    }
+
+    constexpr index_t index() const noexcept {
+        if constexpr (_ExtendedIndex) {
+            const u32 first_part{*reinterpret_cast<const u32*>(&m_id)};
+            const u32 index{(first_part & CExtendedIdMask) >> 8U};
+            return index;
+        } else {
+            return desc().m_basic_index_part;
+        }
+    }
+
+    [[nodiscard]] constexpr _Data data() const noexcept {
+        return *reinterpret_cast<const _Data*>(&desc().m_data);
+    }
+
+    constexpr void set_data(_Data f_data) noexcept {
+        auto& _desc{desc()};
+        _desc.m_data = *reinterpret_cast<const u32*>(&f_data);
+    }
+
+private:
+    constexpr description& desc() noexcept {
+        return *reinterpret_cast<description*>(&m_id);
+    }
+    constexpr const description& desc() const noexcept {
+        return *reinterpret_cast<const description*>(&m_id);
+    }
+
+private:
+    entityid_raw_t m_id; //!< Entity id
+};
+
+using EntityIdAny = EntityIdBase<u32, false>;
+} // namespace skl

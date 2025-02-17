@@ -1,0 +1,33 @@
+//!
+//! \file skl_timer
+//!
+//! \brief timer unitlity
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+struct Timer {
+    //! Reset this timer to 0 / init the timer
+    void reset() noexcept;
+
+    //! Tick(update) the timer and get the total seconds elapsed since the first tick() or reset()
+    [[nodiscard]] double tick() noexcept;
+
+    //! Get total seconds elapsed since the last tick() 
+    [[nodiscard]] double elapsed() const noexcept {
+        return m_elapsed;
+    }
+
+    //! Get total seconds elapsed since the first tick()
+    [[nodiscard]] double time() const noexcept {
+        return m_total_time;
+    }
+
+private:
+    double m_elapsed{0.0};    //!<
+    double m_total_time{0.0}; //!<
+    double m_start{0.0};      //!<
+};
+} // namespace skl

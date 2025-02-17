@@ -1,0 +1,190 @@
+//!
+//! \file skl_atomic
+//!
+//! \brief Extension to the std atomic library, relaxed/acquire+release atomic wrapper
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <atomic>
+
+namespace std {
+template <typename _T, bool bDefaultTo_Relaxed_Or_AcquireRelease = true>
+class interlocked_value {
+    using out_type = _T;
+    using type     = _T;
+    using self_t   = interlocked_value<_T, bDefaultTo_Relaxed_Or_AcquireRelease>;
+
+    static_assert(is_pointer_v<out_type> || is_integral_v<out_type> || is_floating_point_v<out_type> || is_enum_v<out_type>, "T can not be used!");
+    static_assert(std::atomic<type>::is_always_lock_free, "T can not be used, not lock free!");
+
+public:
+    interlocked_value() noexcept
+        : m_value{} { }
+
+    interlocked_value(out_type InValue) noexcept {
+        store_relaxed(InValue);
+    }
+
+    //Store relaxed
+    void store_relaxed(out_type InValue) noexcept {
+        m_value.store(InValue, std::memory_order_relaxed);
+    }
+
+    //Store release
+    void store_release(out_type InValue) noexcept {
+        m_value.store(InValue, std::memory_order_release);
+    }
+
+    //Store
+    void store(out_type InValue) noexcept {
+        if constexpr (bDefaultTo_Relaxed_Or_AcquireRelease) {
+            store_relaxed(InValue);
+        } else {
+            store_release(InValue);
+        }
+    }
+
+    //Load relaxed
+    [[nodiscard]] out_type load_relaxed() const noexcept {
+        return m_value.load(std::memory_order_relaxed);
+    }
+
+    //Load acquire
+    [[nodiscard]] out_type load_acquire() const noexcept {
+        return m_value.load(std::memory_order_acquire);
+    }
+
+    //Load
+    [[nodiscard]] out_type load() const noexcept {
+        if constexpr (bDefaultTo_Relaxed_Or_AcquireRelease) {
+            return load_relaxed();
+        } else {
+            return load_acquire();
+        }
+    }
+
+    //Implicit and explicit load
+    [[nodiscard]] operator out_type() const noexcept {
+        return load();
+    }
+
+    //Store
+    void operator=(out_type InValue) noexcept {
+        store(InValue);
+    }
+
+    //Operator ->, available only for pointer types
+    [[nodiscard]] type operator->() noexcept
+        requires(std::is_pointer_v<type>)
+    {
+
+        return load();
+    }
+
+    //Operator -> const, available only for pointer types
+    [[nodiscard]] type operator->() const noexcept
+        requires(std::is_pointer_v<type>)
+    {
+        return load();
+    }
+
+    //Pre-increment
+    [[nodiscard]] out_type operator++() noexcept
+        requires(std::is_integral_v<type>)
+    {
+        return out_type(1) + increment();
+    }
+
+    //Post-increment
+    [[nodiscard]] out_type operator++(int) noexcept
+        requires(std::is_integral_v<type>)
+    {
+        return increment();
+    }
+
+    //increment
+    [[nodiscard]] out_type operator+=(type Value) noexcept
+        requires(std::is_integral_v<type>)
+    {
+        return increment(Value);
+    }
+    //Pre-decrement
+    [[nodiscard]] out_type operator--() noexcept
+        requires(std::is_integral_v<type>)
+    {
+        return decrement() - out_type(1);
+    }
+
+    //Post-decrement
+    [[nodiscard]] out_type operator--(int) noexcept
+        requires(std::is_integral_v<type>)
+    {
+        return decrement();
+    }
+
+    //Copy
+    template <typename TOther, bool _bDefaultTo_Relaxed_AcquireRelease>
+    interlocked_value(const interlocked_value<TOther, _bDefaultTo_Relaxed_AcquireRelease>& Other) noexcept {
+        store(static_cast<out_type>(Other.load()));
+    }
+
+    //Copy
+    template <typename TOther, bool _bDefaultTo_Relaxed_AcquireRelease>
+    self_t& operator=(const interlocked_value<TOther, _bDefaultTo_Relaxed_AcquireRelease>& Other) noexcept {
+        SKL_ASSERT(this != &Other);
+        store(static_cast<out_type>(Other.load()));
+        return *this;
+    }
+
+    //Compare exchange
+    [[nodiscard]] bool cas(out_type InValue, out_type& InExpected) noexcept {
+        return m_value.compare_exchange_weak(InExpected, InValue, std::memory_order_release, std::memory_order_relaxed);
+    }
+
+    //Exchange values
+    [[nodiscard]] out_type exchange(out_type InValue) noexcept {
+        return m_value.exchange(InValue, std::memory_order_acq_rel);
+    }
+
+    //@TODO math and logic operators
+
+    //Decrease the value by 1 and return the value before the decrement.
+    [[nodiscard]] out_type decrement() noexcept {
+        return m_value.fetch_sub(1, std::memory_order_acq_rel);
+    }
+
+    //Decrease the value by ByValue and return the value before the decrement.
+    [[nodiscard]] out_type decrement(type ByValue) noexcept {
+        return m_value.fetch_sub(ByValue, std::memory_order_acq_rel);
+    }
+
+    //Increments the value by 1 and return the value before the increment.
+    [[nodiscard]] out_type increment() noexcept {
+        return m_value.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    //Increments the value by ByValue and return the value before the increment.
+    [[nodiscard]] out_type increment(type ByValue) noexcept {
+        return m_value.fetch_add(ByValue, std::memory_order_acq_rel);
+    }
+
+private:
+    std::atomic<type> m_value;
+};
+
+/**
+     * \brief All operations on this value are atomic with relaxed loads and stores
+     * \notice cas() and exchange() calls are synced (not relaxed)
+     */
+template <typename T>
+using relaxed_value = interlocked_value<T, true>;
+
+/**
+  * \brief All operations on this value are atomic with acquire loads and release stores
+  * \remark cas() and exchange() calls are synced (not relaxed)
+  */
+template <typename T>
+using synched_value = interlocked_value<T, false>;
+} //namespace std

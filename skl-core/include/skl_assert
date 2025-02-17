@@ -1,0 +1,50 @@
+//!
+//! \file skl_assert
+//!
+//! \brief assert utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <Tune_SkylakeCoreLib_public.h>
+
+namespace skl_assert {
+[[clang::noinline]] extern void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept;
+}
+
+#if SKL_ASSERT_LEVEL == SKL_ASSERT_LEVEL_ALL
+#    define HAS_SKL_ASSERT 1
+#    define SKL_ASSERT(expr)                                                  \
+        {                                                                     \
+            if (!!!(expr)) {                                                  \
+                skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
+            }                                                                 \
+        }
+#    define HAS_SKL_ASSERT_CRITICAL 1
+#    define SKL_ASSERT_CRITICAL(expr)                                         \
+        {                                                                     \
+            if (!!!(expr)) {                                                  \
+                skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
+            }                                                                 \
+        }
+#elif SKL_ASSERT_LEVEL == SKL_ASSERT_LEVEL_CRITICAL
+#    define HAS_SKL_ASSERT_CRITICAL 1
+#    define SKL_ASSERT(expr)
+#    define SKL_ASSERT_CRITICAL(expr)                                         \
+        {                                                                     \
+            if (!!!(expr)) {                                                  \
+                skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
+            }                                                                 \
+        }
+#else
+#    define SKL_ASSERT(expr)          (void)0
+#    define SKL_ASSERT_CRITICAL(expr) (void)0
+#endif
+
+#define SKL_ASSERT_PERMANENT(expr)                                        \
+    {                                                                     \
+        if (!!!(expr)) [[unlikely]] {                                     \
+            skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
+        }                                                                 \
+    }
