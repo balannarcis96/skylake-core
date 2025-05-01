@@ -1,0 +1,285 @@
+//!
+//! \file skl_circular_queue_if
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <skl_utility>
+#include <skl_circular_queue>
+
+namespace skl {
+//! [ATRP] Extended interface for skl_fixed_vector<T>
+template <typename _T,
+          u64  _FixedCapacity,
+          u64  _Alignment,
+          bool _UseHeepStorage = false,
+          bool _DeferHeepAlloc = false,
+          bool _UseCoreAlloc   = false>
+class iskl_circular_queue final {
+public:
+    using root_t = skl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+
+    static constexpr bool HasHeepStorage = root_t::HasHeepStorage;
+    static constexpr bool DeferHeepAlloc = root_t::DeferHeepAlloc;
+    static constexpr bool UseCoreAlloc   = root_t::UseCoreAlloc;
+    static constexpr u64  Capacity       = root_t::Capacity;
+    static constexpr u64  Alignment      = root_t::Alignment;
+    static constexpr u64  ByteSize       = root_t::ByteSize;
+    static constexpr u64  Mask           = root_t::Mask;
+    using type                           = typename root_t::type;
+    using size_t                         = typename root_t::size_t;
+    using storage_t                      = typename root_t::storage_t;
+
+public:
+    //ATRP
+    iskl_circular_queue() noexcept                             = delete;
+    ~iskl_circular_queue() noexcept                            = delete;
+    iskl_circular_queue(const iskl_circular_queue&)            = delete;
+    iskl_circular_queue& operator=(const iskl_circular_queue&) = delete;
+    iskl_circular_queue(iskl_circular_queue&&)                 = delete;
+    iskl_circular_queue& operator=(iskl_circular_queue&&)      = delete;
+
+    //! Is this queue empty
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return root()->empty();
+    }
+
+    //! Is this queue full
+    [[nodiscard]] constexpr bool full() const noexcept {
+        return size() == capacity();
+    }
+
+    //! Can this queue fit \p f_objects_count
+    [[nodiscard]] constexpr bool fits(u64 f_objects_count) const noexcept {
+        return root()->fits(f_objects_count);
+    }
+
+    //! Get the queue capacity
+    [[nodiscard]] static constexpr u64 capacity() noexcept {
+        return root_t::capacity();
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] _T* data() noexcept {
+        return root()->data();
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] const _T* data() const noexcept {
+        return root()->data();
+    }
+
+    //! Get the queue size (in objects)
+    [[nodiscard]] constexpr u64 size() const noexcept {
+        return root()->size();
+    }
+
+    //! Copy new object to the queue front
+    //! \remark Asserts that fits(1U)
+    void push(const _T& f_object) noexcept {
+        auto* self = root();
+
+        SKL_ASSERT(fits(1U));
+
+        //Copy construct the object
+        new (&data()[(self->m_front++ & Mask)]) _T(f_object);
+    }
+
+    //! Try to copy new object to the queue front
+    //! \returns false if no space in the queue
+    [[nodiscard]] bool try_push(const _T& f_object) noexcept {
+        auto* self = root();
+
+        if (false == fits(1U)) {
+            return false;
+        }
+
+        //Copy construct the object
+        new (&data()[(self->m_front & Mask)]) _T(f_object);
+        self->m_front++;
+
+        [[likely]] return true;
+    }
+
+    //! Move new object into the queue front
+    //! \remark Asserts that fits(1U)
+    void emplace(_T&& f_object) noexcept {
+        auto* self = root();
+
+        SKL_ASSERT(fits(1U));
+
+        //Move construct the object
+        new (&data()[(self->m_front++ & Mask)]) _T(static_cast<_T&&>(f_object));
+    }
+
+    //! Try to move new object into the queue front
+    //! \returns false if no space in the queue
+    [[nodiscard]] bool try_emplace(_T&& f_object) noexcept {
+        auto* self = root();
+
+        if (false == fits(1U)) {
+            return false;
+        }
+
+        //Move construct the object
+        new (&data()[(self->m_front++ & Mask)]) _T(static_cast<_T&&>(f_object));
+
+        [[likely]] return true;
+    }
+
+    //! Pop one tail object (destroy the object if not trivial)
+    //! \remark Asserts size() > 0
+    void pop() noexcept {
+        SKL_ASSERT(0U < size());
+        auto* self = root();
+
+        if constexpr (false == __is_trivial(_T)) {
+            tail().~_T();
+        }
+
+        ++self->m_tail;
+    }
+
+    //! Pop one tail object (destroy the object if not trivial)
+    //! \returns false if size() == 0, otherwise calls pop() and returns true
+    [[nodiscard]] bool try_pop() noexcept {
+        if (size() > 0U) {
+            pop();
+            return true;
+        }
+
+        return false;
+    }
+
+    //! Pop one front object (destroy the object if not trivial)
+    //! \remark Asserts size() > 0
+    void pop_front() noexcept {
+        SKL_ASSERT(0U < size());
+        auto* self = root();
+
+        --self->m_front;
+
+        if constexpr (false == __is_trivial(_T)) {
+            data()[(self->m_front & Mask)].~_T();
+        }
+    }
+
+    //! Pop one front object (destroy the object if not trivial)
+    //! \returns false if size() == 0, otherwise calls pop() and returns true
+    [[nodiscard]] bool try_pop_front() noexcept {
+        if (size() > 0U) {
+            pop_front();
+            return true;
+        }
+
+        return false;
+    }
+
+    //! operator[]
+    [[nodiscard]] _T& operator[](u64 f_index) noexcept {
+        return (*root())[f_index];
+    }
+
+    //! operator[]
+    [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
+        return (*root())[f_index];
+    }
+
+    //! Clear the queue, destroying all objects if needed
+    void clear() noexcept {
+        root()->clear();
+    }
+
+    //! Get the tail object (first object)
+    [[nodiscard]] _T& tail() noexcept {
+        return root()->tail();
+    }
+
+    //! Get the tail object (first object)
+    [[nodiscard]] const _T& tail() const noexcept {
+        return root()->tail();
+    }
+
+    //! Get the front object (last object)
+    [[nodiscard]] _T& front() noexcept {
+        return root()->front();
+    }
+
+    //! Get the front object (last object)
+    [[nodiscard]] const _T& front() const noexcept {
+        return root()->front();
+    }
+
+    //! Get the tail raw index
+    [[nodiscard]] u64 tail_index_raw() noexcept {
+        return root()->tail_index_raw();
+    }
+
+    //! Get the front raw index
+    [[nodiscard]] u64 front_index_raw() noexcept {
+        return root()->front_index_raw();
+    }
+
+    //! Get the queue remaining capacity (in objects)
+    [[nodiscard]] constexpr u64 remaining() const noexcept {
+        return root()->remaining();
+    }
+
+    //! Move the front forward by \p f_items_count
+    //! \remark Available only if _T is trivial
+    //! \remark Asserts true == fits(f_items_count)!
+    void reserve(const u64 f_items_count) noexcept
+        requires(__is_trivial(_T))
+    {
+        SKL_ASSERT(fits(f_items_count));
+        root()->m_front += f_items_count;
+    }
+
+    //! Move the tail forward by \p f_items_count
+    //! \remark Available only if _T is trivial
+    //! \remark Asserts true == size() >= f_items_count!
+    //! \remark This essentially pops \p f_items_count items from the tail
+    void advance_tail(const u64 f_items_count) noexcept
+        requires(__is_trivial(_T))
+    {
+        SKL_ASSERT(size() >= f_items_count);
+        root()->m_tail += f_items_count;
+    }
+
+    //! Move the front(head) forward by \p f_items_count
+    //! \remark Available only if _T is trivial
+    //! \remark Asserts true == remaining() >= f_items_count!
+    //! \remark This essentially pops \p f_items_count items from the tail
+    void advance_front(const u64 f_items_count) noexcept
+        requires(__is_trivial(_T))
+    {
+        SKL_ASSERT(remaining() >= f_items_count);
+        root()->m_front += f_items_count;
+    }
+
+    //! Copy \p f_max_items_count items stating from the tail into \p f_out_buffer
+    //! \remark Available only if _T is trivial
+    //! \remark Does not advance the tail, does just a simple one by one copy of up to \p f_max_items_count items into \p f_out_buffer
+    //! \returns No of items copied = min(size(), \p f_max_items_count)
+    [[nodiscard]] u32 collect_items(_T* f_out_buffer, u64 f_max_items_count) noexcept
+        requires(__is_trivial(_T))
+    {
+        const auto collect_count = skl_min(f_max_items_count, size());
+        for (u64 i = 0ULL; i < collect_count; ++i) {
+            f_out_buffer[i] = (*this)[i];
+        }
+
+        return collect_count;
+    }
+
+private:
+    //ATPR
+    [[nodiscard]] root_t* root() noexcept {
+        return reinterpret_cast<root_t*>(this);
+    }
+    [[nodiscard]] const root_t* root() const noexcept {
+        return reinterpret_cast<const root_t*>(this);
+    }
+};
+} // namespace skl

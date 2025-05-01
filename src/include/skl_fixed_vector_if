@@ -1,0 +1,399 @@
+//!
+//! \file skl_fixed_vector_if
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_status"
+#include "skl_fixed_vector"
+#include "skl_traits/forward"
+
+namespace skl {
+//! [ATRP] Extended interface for skl_fixed_vector<T>
+template <typename _T,
+          u64  _FixedCapacity,
+          u64  _Alignment,
+          bool _UseHeepStorage,
+          bool _DeferHeepAlloc,
+          bool _UseCoreAlloc>
+class iskl_fixed_vector final {
+public:
+    using root_t = skl_fixed_vector_impl<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+
+    static constexpr bool HasHeepStorage = root_t::HasHeepStorage;
+    static constexpr bool DeferHeepAlloc = root_t::DeferHeepAlloc;
+    static constexpr bool UseCoreAlloc   = root_t::UseCoreAlloc;
+    static constexpr u64  Capacity       = root_t::Capacity;
+    static constexpr u64  Alignment      = root_t::Alignment;
+    static constexpr u64  ByteSize       = root_t::ByteSize;
+    using type                           = typename root_t::type;
+    using size_t                         = typename root_t::size_t;
+    using storage_t                      = typename root_t::storage_t;
+
+public:
+    //ATRP
+    iskl_fixed_vector() noexcept                           = delete;
+    ~iskl_fixed_vector() noexcept                          = delete;
+    iskl_fixed_vector(const iskl_fixed_vector&)            = delete;
+    iskl_fixed_vector& operator=(const iskl_fixed_vector&) = delete;
+    iskl_fixed_vector(iskl_fixed_vector&&)                 = delete;
+    iskl_fixed_vector& operator=(iskl_fixed_vector&&)      = delete;
+
+    //! Is this vector empty
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return root()->empty();
+    }
+
+    //! Can this vector fit \p f_objects_count
+    [[nodiscard]] constexpr bool fits(u64 f_objects_count) const noexcept {
+        SKL_ASSERT(size() <= capacity());
+        return (capacity() - size()) >= f_objects_count;
+    }
+
+    //! Get the vector capacity
+    [[nodiscard]] constexpr u64 capacity() const noexcept {
+        return Capacity;
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] constexpr _T* data() noexcept {
+        return root()->data();
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] constexpr const _T* data() const noexcept {
+        return root()->data();
+    }
+
+    //! Get the vector size (in objects)
+    [[nodiscard]] constexpr u64 size() const noexcept {
+        return root()->size();
+    }
+
+    //! Copy new object to the vector
+    [[nodiscard]] constexpr bool push_back(const _T& f_object) noexcept {
+        auto* self = root();
+
+        if (false == fits(1U)) [[unlikely]] {
+            return false;
+        }
+
+        //Copy construct the object
+        new (self->m_finish++) _T(f_object);
+
+        return true;
+    }
+
+    //! Move new object into the vector
+    [[nodiscard]] constexpr bool emplace_back(_T&& f_object) noexcept {
+        auto* self = root();
+
+        if (false == fits(1U)) [[unlikely]] {
+            return false;
+        }
+
+        //Move construct the object
+        new (self->m_finish++) _T(static_cast<_T&&>(f_object));
+
+        return true;
+    }
+
+    //! Move new object into the vector
+    template <typename... _Args>
+    [[nodiscard]] constexpr bool emplace_back(_Args... f_args) noexcept {
+        auto* self = root();
+
+        if (false == fits(1U)) [[unlikely]] {
+            return false;
+        }
+
+        //Move construct the object
+        new (self->m_finish++) _T(skl_fwd<_Args>(f_args)...);
+
+        return true;
+    }
+
+    //! Move new object into the vector
+    template <typename... _Args>
+    constexpr void emplace_back_checked(_Args... f_args) noexcept {
+        auto* self = root();
+
+        SKL_ASSERT_CRITICAL(fits(1U));
+
+        //Move construct the object
+        new (self->m_finish++) _T(skl_fwd<_Args>(f_args)...);
+    }
+
+    //! Remove the last object
+    constexpr void pop_back() noexcept {
+        SKL_ASSERT(0U < size());
+        auto* self = root();
+
+        --self->m_finish;
+
+        if constexpr (false == __is_trivial(_T)) {
+            self->m_finish->~_T();
+        }
+    }
+
+    //! operator[]
+    [[nodiscard]] constexpr _T& operator[](u64 f_index) noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! operator[]
+    [[nodiscard]] constexpr const _T& operator[](u64 f_index) const noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! Clear the vector, destroying all objects if needed
+    constexpr void clear() noexcept {
+        root()->clear();
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] constexpr _T& back() noexcept {
+        SKL_ASSERT(0U < size());
+        return *(root()->m_finish - 1U);
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] constexpr const _T& back() const noexcept {
+        SKL_ASSERT(0U < size());
+        return *(root()->m_finish - 1U);
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] constexpr _T& front() noexcept {
+        SKL_ASSERT(0U < size());
+        return *root()->m_start;
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] constexpr const _T& front() const noexcept {
+        SKL_ASSERT(0U < size());
+        return *root()->m_start;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] constexpr _T* begin() noexcept {
+        return root()->m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] constexpr _T* end() noexcept {
+        return root()->m_finish;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] constexpr const _T* begin() const noexcept {
+        return root()->m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] constexpr const _T* end() const noexcept {
+        return root()->m_finish;
+    }
+
+    //! Find \p f_target in this vector
+    //! \returns end() if item is not found
+    [[nodiscard]] constexpr _T* find(_T f_value) noexcept {
+        for (auto& it : *this) {
+            if (it == f_value) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Find \p f_target in this vector
+    //! \returns end() if item is not found
+    [[nodiscard]] constexpr const _T* find(_T f_value) const noexcept {
+        for (auto& it : *this) {
+            if (it == f_value) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Find \p f_target in this vector
+    //!
+    //! Usage:
+    //! find_if([](const _T& f_item) static noexcept {
+    //!     return true;
+    //! });
+    //!
+    //! \returns end() if item is not found
+    template <typename _TFunctor>
+    [[nodiscard]] constexpr const _T* find_if(const _TFunctor& f_predicate) const noexcept {
+        for (auto& it : *this) {
+            if (f_predicate(it)) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Find \p f_target in this vector
+    //!
+    //! Usage:
+    //! find_if([](const _T& f_item) static noexcept {
+    //!     return true;
+    //! });
+    //!
+    //! \returns end() if item is not found
+    template <typename _TFunctor>
+    [[nodiscard]] constexpr _T* find_if(const _TFunctor& f_predicate) noexcept {
+        for (auto& it : *this) {
+            if (f_predicate(it)) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Find \p f_target in this vector
+    //!
+    //! Usage:
+    //! find_if_static<decltype([](const _T& f_item) static noexcept {
+    //!     return true;
+    //! })>();
+    //!
+    //! \returns end() if item is not found
+    template <typename _TStaticFunctor>
+    [[nodiscard]] constexpr const _T* find_if_static() const noexcept {
+        for (auto& it : *this) {
+            if (_TStaticFunctor::operator()(it)) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Find \p f_target in this vector
+    //!
+    //! Usage:
+    //! find_if_static<decltype([](const _T& f_item) static noexcept {
+    //!     return true;
+    //! })>();
+    //!
+    //! \returns end() if item is not found
+    template <typename _TStaticFunctor>
+    [[nodiscard]] constexpr _T* find_if_static() noexcept {
+        for (auto& it : *this) {
+            if (_TStaticFunctor::operator()(it)) {
+                return &it;
+            }
+        }
+
+        return end();
+    }
+
+    //! Reserve a portion/all of the remaining fixed buffer
+    //! \remark asserts true == fits(f_count)
+    constexpr void reserve(u64 f_count) noexcept {
+        SKL_ASSERT(fits(f_count));
+        auto* new_finish = root()->m_finish + f_count;
+
+        //Default construct all reserved objects if necessary
+        if constexpr (false == __is_trivial(_T)) {
+            for (auto* cursor = root()->m_finish; cursor != new_finish; ++cursor) {
+                new (cursor) _T();
+            }
+        }
+
+        root()->m_finish = new_finish;
+    }
+
+    //! Unreserve a portion/all of the buffer
+    //! \remark asserts true == fits(f_count)
+    constexpr void unreserve(u64 f_count) noexcept
+        requires(__is_trivial(_T))
+    {
+        SKL_ASSERT(size() >= f_count);
+        root()->m_finish -= f_count;
+    }
+
+    //! Add the given \p f_value to the fixed vector if 1) there is space 2) the value is unique
+    //! \returns SKL_ERR_NOT_UNIQUE if value is not unique
+    //! \returns SKL_ERR_FAIL if no space for the value
+    //! \returns SKL_SUCCESS otherwise, value is unique and added
+    [[nodiscard]] constexpr skl_status add_if_unique(_T f_value) noexcept
+        requires(__is_trivial(_T))
+    {
+        const auto* existing = find(f_value);
+        if (nullptr != existing) {
+            return SKL_ERR_NOT_UNIQUE;
+        }
+
+        const auto result = push_back(f_value);
+        if (false == result) {
+            return SKL_ERR_FAIL;
+        }
+
+        return SKL_SUCCESS;
+    }
+
+    //! Erases the element at \p f_index
+    //! \remark Asserts that \p f_index < size()
+    //! \remark If the size() > 1 and f_index is not the last element, the last element is moved to the erased slot
+    //! \remark If a backswap is performed and void != _StaticFunctor, \p _StaticFunctor::operator()(...) is called
+    //! \remark _StaticFunctor must be a static functor of type void(_T, u64 f_new_index) noexcept;
+    template <typename _StaticFunctor = void>
+    constexpr void back_swap_erase(u64 f_index) noexcept {
+        const auto _size = size();
+        SKL_ASSERT(f_index < _size);
+
+        //1. Destroy the erased object if not trivial
+        if constexpr (false == __is_trivial(_T)) {
+            (*this)[f_index].~_T();
+        }
+
+        //2. Move the back into the erased slot if necessary
+        if ((_size > 1U) && (f_index < (_size - 1U))) {
+            auto* last = root()->m_finish - 1U;
+
+            if constexpr (false == __is_trivial(_T)) {
+                //Move the last item into the erased slot
+                new (&(*this)[f_index]) _T(static_cast<_T&&>(*last));
+            } else {
+                //Copy the last item into the erased slot (trivial)
+                (*this)[f_index] = *last;
+
+                //@TODO: detect the size of the object and maybe use memcpy for a more efficient trivial copy
+                // eg. if constexpr(sizeof(_T) > SKL_CACHELINE_SIZE) {...}
+            }
+
+            if constexpr (false == __is_same(void, _StaticFunctor)) {
+                _StaticFunctor::operator()(*last, f_index);
+            }
+
+            //3. Destroy the last element if needed
+            if constexpr (false == __is_trivial(_T)) {
+                last->~_T();
+            }
+        }
+
+        //4. Pop last item
+        --root()->m_finish;
+    }
+
+private:
+    //ATPR
+    [[nodiscard]] root_t* root() noexcept {
+        return reinterpret_cast<root_t*>(this);
+    }
+    [[nodiscard]] const root_t* root() const noexcept {
+        return reinterpret_cast<const root_t*>(this);
+    }
+};
+} // namespace skl

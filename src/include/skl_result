@@ -1,0 +1,125 @@
+//!
+//! \file skl_rstatus
+//!
+//! \brief result type
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_status"
+#include "skl_assert"
+#include "skl_traits/forward"
+#include "skl_traits/placement_new"
+
+struct skl_fail {
+    constexpr skl_fail() noexcept = default;
+
+    explicit skl_fail(skl_status_raw f_error_status) noexcept
+        : m_error_status(f_error_status) { }
+
+    ~skl_fail() noexcept                          = default;
+    skl_fail(const skl_fail&) noexcept            = default;
+    skl_fail& operator=(const skl_fail&) noexcept = default;
+    skl_fail(skl_fail&&) noexcept                 = default;
+    skl_fail& operator=(skl_fail&&) noexcept      = default;
+
+    explicit operator skl_status_raw() const noexcept {
+        return m_error_status;
+    }
+
+    skl_status_raw m_error_status{SKL_ERR_FAIL};
+};
+
+template <typename _Data>
+class skl_result {
+    static_assert(sizeof(_Data) > 0U, "If no data is required, use skl_status");
+
+public:
+    static constexpr auto buffer_size_v = sizeof(_Data);
+    using data_t                        = _Data;
+
+    //Failure construct
+    constexpr skl_result(skl_fail f_error) noexcept
+        : m_status(f_error.m_error_status) {
+        SKL_ASSERT_CRITICAL(f_error.m_error_status < 0);
+    }
+
+    //Success construct data
+    template <typename... _Args>
+    constexpr skl_result(_Args... f_args) noexcept
+        : m_status(SKL_SUCCESS) {
+        construct_data(skl::skl_fwd<_Args>(f_args)...);
+    }
+
+    //Copy construct
+    constexpr explicit skl_result(const skl_result& f_other) noexcept
+        : m_status(f_other.m_status) {
+        construct_data(f_other.value());
+    }
+
+    //Move construct
+    constexpr explicit skl_result(skl_result&& f_other) noexcept
+        : m_status(f_other.m_status) {
+        if (f_other.is_success()) {
+            construct_data(static_cast<_Data&&>(f_other.value()));
+        }
+    }
+
+    //Cannot copy or move assign
+    constexpr skl_result& operator=(const skl_result&)     = delete;
+    constexpr skl_result& operator=(skl_result&&) noexcept = delete;
+
+    constexpr ~skl_result() noexcept {
+        if (is_success()) {
+            value().~_Data();
+        }
+    }
+
+    [[nodiscard]] constexpr bool is_success() const noexcept {
+        return status().is_success();
+    }
+
+    [[nodiscard]] constexpr bool is_failure() const noexcept {
+        return status().is_failure();
+    }
+
+    [[nodiscard]] constexpr bool is_success(skl_status f_specific_success_status) const noexcept {
+        return status().is_success(f_specific_success_status);
+    }
+
+    [[nodiscard]] constexpr bool is_failure(skl_status f_specific_fail_status) const noexcept {
+        return status().is_failure(f_specific_fail_status);
+    }
+
+    [[nodiscard]] constexpr skl_status status() const noexcept {
+        return m_status;
+    }
+
+    [[nodiscard]] constexpr const _Data& value() const noexcept {
+        SKL_ASSERT_CRITICAL(is_success());
+        return *reinterpret_cast<const _Data*>(m_value_buffer);
+    }
+
+    [[nodiscard]] constexpr _Data value_or(_Data f_default) const noexcept {
+        if (is_success()) {
+            return value();
+        }
+        return f_default;
+    }
+
+    [[nodiscard]] constexpr _Data&& value() noexcept {
+        SKL_ASSERT_CRITICAL(is_success());
+        return static_cast<_Data&&>(*reinterpret_cast<_Data*>(m_value_buffer));
+    }
+
+private:
+    template <typename... _Args>
+    constexpr void construct_data(_Args... f_args) noexcept {
+        new (m_value_buffer) _Data(skl::skl_fwd<_Args>(f_args)...);
+    }
+
+private:
+    skl_status m_status;                                                 //!< Status of the result
+    alignas(alignof(_Data)) unsigned char m_value_buffer[buffer_size_v]; //!< Buffer to store the (optional) value
+};

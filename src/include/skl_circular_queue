@@ -1,0 +1,243 @@
+//!
+//! \file skl_circular_queue
+//!
+//! \brief skl_circular_queue fwd and minimal def
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+#include "skl_int"
+#include "skl_assert"
+#include "skl_traits/conditional_t"
+
+namespace skl {
+template <typename, u64, u64, bool, bool, bool>
+class iskl_circular_queue;
+
+void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_vector_free(void* f_block) noexcept;
+void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
+void* skl_core_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_core_free(void* f_block) noexcept;
+void  skl_core_zero_memory(void* f_block, u64 f_bytes_count) noexcept;
+} // namespace skl
+
+namespace skl {
+template <typename _T,
+          u64  _FixedCapacity,
+          u64  _Alignment      = alignof(_T),
+          bool _UseHeepStorage = false,
+          bool _DeferHeepAlloc = false,
+          bool _UseCoreAlloc   = false>
+struct skl_circular_queue {
+public:
+    static_assert(_FixedCapacity > 0U, "_FixedCapacity must be grater then 0");
+    static_assert(((_FixedCapacity - 1U) & _FixedCapacity) == 0U, "_FixedCapacity must be a power of 2");
+
+    static constexpr bool HasHeepStorage = _UseHeepStorage;
+    static constexpr bool DeferHeepAlloc = _DeferHeepAlloc;
+    static constexpr bool UseCoreAlloc   = _UseCoreAlloc;
+    static constexpr u64  Capacity       = _FixedCapacity;
+    static constexpr u64  Mask           = _FixedCapacity - 1U;
+    static constexpr u64  Alignment      = _Alignment;
+    static constexpr u64  ByteSize       = sizeof(_T) * Capacity;
+    using type                           = _T;
+    using size_t                         = u64;
+    using storage_t                      = conditional_t<_UseHeepStorage, byte*, byte[ByteSize]>;
+    using atrp_interface_t               = iskl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+
+    static constexpr bool IsTypeNoThrowDestructible = noexcept(static_cast<_T*>(nullptr)->~_T());
+    static constexpr bool IsTypeTrivial             = __is_trivial(_T);
+
+    skl_circular_queue() noexcept {
+        if constexpr (_UseHeepStorage && (false == _DeferHeepAlloc)) {
+            if constexpr (_UseCoreAlloc) {
+                m_storage = reinterpret_cast<byte*>(skl_core_alloc(ByteSize, Alignment));
+            } else {
+                m_storage = reinterpret_cast<byte*>(skl_vector_alloc(ByteSize, Alignment));
+            }
+            SKL_ASSERT_CRITICAL(nullptr != m_storage);
+        } else if constexpr (_UseHeepStorage) {
+            m_storage = nullptr;
+        }
+    }
+    ~skl_circular_queue() noexcept {
+        clear();
+
+        if constexpr (_UseHeepStorage) {
+            if (nullptr != m_storage) {
+                if constexpr (_UseCoreAlloc) {
+                    skl_core_free(m_storage);
+                } else {
+                    skl_vector_free(m_storage);
+                }
+            }
+        }
+    }
+
+    skl_circular_queue(const skl_circular_queue&)            = delete;
+    skl_circular_queue& operator=(const skl_circular_queue&) = delete;
+    skl_circular_queue(skl_circular_queue&&)                 = delete;
+    skl_circular_queue& operator=(skl_circular_queue&&)      = delete;
+
+    //! Is this queue empty
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return m_tail == m_front;
+    }
+
+    //! Is this queue full
+    [[nodiscard]] constexpr bool full() const noexcept {
+        return size() == capacity();
+    }
+
+    //! Get the queue capacity (in objects)
+    [[nodiscard]] static constexpr u64 capacity() noexcept {
+        return _FixedCapacity;
+    }
+
+    //! Get the queue size (in objects)
+    [[nodiscard]] constexpr u64 size() const noexcept {
+        return m_front - m_tail;
+    }
+
+    //! Get the queue remaining capacity (in objects)
+    [[nodiscard]] constexpr u64 remaining() const noexcept {
+        return capacity() - size();
+    }
+
+    //! Can this queue fit \p f_objects_count
+    [[nodiscard]] constexpr bool fits(u64 f_objects_count) const noexcept {
+        return remaining() >= f_objects_count;
+    }
+
+    //! Upgrade to a full queue interface
+    [[nodiscard]] atrp_interface_t& upgrade() noexcept {
+        return *reinterpret_cast<atrp_interface_t*>(this);
+    }
+
+    //! Upgrade to a full queue interface
+    [[nodiscard]] const atrp_interface_t& upgrade() const noexcept {
+        return *reinterpret_cast<const atrp_interface_t*>(this);
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] _T* data() noexcept {
+        return reinterpret_cast<_T*>(m_storage);
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] const _T* data() const noexcept {
+        return reinterpret_cast<const _T*>(m_storage);
+    }
+
+    //! operator[]
+    [[nodiscard]] _T& operator[](u64 f_index) noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[(m_tail + f_index) & Mask];
+    }
+
+    //! operator[]
+    [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[(m_tail + f_index) & Mask];
+    }
+
+    //! Clear the queue, destroying all objects if needed
+    void clear() noexcept {
+        if constexpr (false == __is_trivial(_T)) {
+            destruct_objects();
+        }
+
+        m_tail  = 0U;
+        m_front = 0U;
+    }
+
+    //! Get the tail object (first object)
+    [[nodiscard]] _T& tail() noexcept {
+        SKL_ASSERT(size() > 0U);
+        return data()[m_tail & Mask];
+    }
+
+    //! Get the tail object (first object)
+    [[nodiscard]] const _T& tail() const noexcept {
+        SKL_ASSERT(size() > 0U);
+        return data()[m_tail & Mask];
+    }
+
+    //! Get the front object (last object)
+    [[nodiscard]] _T& front() noexcept {
+        SKL_ASSERT(size() > 0U);
+        return data()[(m_front - 1U) & Mask];
+    }
+
+    //! Get the tail raw index
+    [[nodiscard]] u64 tail_index_raw() noexcept {
+        return m_tail;
+    }
+
+    //! Get the front raw index
+    [[nodiscard]] u64 front_index_raw() noexcept {
+        return m_front;
+    }
+
+    //! Get the item at \p f_raw_index (masked)
+    [[nodiscard]] _T& at(u64 f_raw_index) noexcept {
+        return data()[f_raw_index & Mask];
+    }
+
+    //! Get the item at \p f_raw_index (masked)
+    [[nodiscard]] const _T& at(u64 f_raw_index) const noexcept {
+        return data()[f_raw_index & Mask];
+    }
+
+    //! Get the front object (last object)
+    [[nodiscard]] const _T& front() const noexcept {
+        SKL_ASSERT(size() > 0U);
+        return data()[(m_front - 1U) & Mask];
+    }
+
+    //! Call to do the defered heap allocation
+    //! \remark Asserts that the allocation is OK
+    //! \remark If buffer is already valid, does nothing
+    //! \remark Call this only if _UseHeepStorage = true and _DefereHeepAlloc = true
+    //! \remark Call this before using any other api of this class
+    //! \remark Resets the tail and front indices to 0
+    template <bool _ZeroMemory = false>
+    void do_heep_alloc() noexcept
+        requires(_UseHeepStorage && _DeferHeepAlloc)
+    {
+        if (nullptr == m_storage) {
+            if constexpr (_UseCoreAlloc) {
+                m_storage = reinterpret_cast<byte*>(skl_core_alloc(ByteSize, Alignment));
+            } else {
+                m_storage = reinterpret_cast<byte*>(skl_vector_alloc(ByteSize, Alignment));
+            }
+            SKL_ASSERT_CRITICAL(nullptr != m_storage);
+
+            if constexpr (_ZeroMemory) {
+                skl_core_zero_memory(m_storage, ByteSize);
+            }
+
+            m_front = 0U;
+            m_tail  = 0U;
+        }
+    }
+
+protected:
+    template <typename = _T>
+    void destruct_objects() noexcept
+        requires((false == __is_trivial(_T)) && IsTypeNoThrowDestructible)
+    {
+        for (u64 i = 0U; i < size(); ++i) {
+            (*this)[i].~_T();
+        }
+    }
+
+protected:
+    u64       m_front = 0U;
+    u64       m_tail  = 0U;
+    storage_t m_storage;
+
+    friend iskl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+};
+} // namespace skl

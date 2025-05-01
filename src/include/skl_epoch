@@ -1,0 +1,16 @@
+//!
+//! \file skl_epoch
+//!
+//! \brief epoch time util
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+using epoch_time_point_t    = unsigned long;
+using epoch_time_duration_t = unsigned long;
+
+//! Get the current epoch time in milliseconds
+[[nodiscard]] epoch_time_point_t get_current_epoch_time() noexcept;
+} // namespace skl

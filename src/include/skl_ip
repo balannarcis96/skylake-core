@@ -1,0 +1,26 @@
+//!
+//! \file skl_ip
+//!
+//! \brief ip types, constants, utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+
+namespace skl {
+//! IPv4 address type
+using ipv4_addr_t = u32;
+
+//! TCP/UDP port type
+using net_port_t = u16;
+} // namespace skl
+
+namespace skl {
+//! IPv4 ANY address
+constexpr ipv4_addr_t CIpAny = 0U;
+
+//! IPv4 BROADCAST address
+constexpr ipv4_addr_t CIpBroadcast = 0xFFFFFFFFU;
+} // namespace skl

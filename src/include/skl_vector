@@ -1,0 +1,259 @@
+//!
+//! \file skl_vector
+//!
+//! \brief skl_vector fwd and minimal def
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+#include "skl_int"
+#include "skl_assert"
+
+namespace skl {
+template <typename>
+class iskl_vector;
+
+extern void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+extern void  skl_vector_free(void* f_block) noexcept;
+extern void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
+} // namespace skl
+
+namespace skl {
+constexpr u64 CVectorIncreaseStep = 8U;
+
+//! Minimal dynamic sized array implementation
+//! To acquire the full (extended) interface call upgrade()
+//!     upgrade() returns an ATPR ref(see <skl_def>) to the extended interface(iskl_vector<T>) of the basic vector<T>
+template <typename _T, u64 _InitialCapacity = CVectorIncreaseStep>
+struct skl_vector {
+public:
+    static constexpr auto InitialCapacity = _InitialCapacity;
+    using type                            = _T;
+    using size_t                          = u64;
+
+    static constexpr bool IsTypeNoThrowDestructible = noexcept(static_cast<_T*>(nullptr)->~_T());
+
+    skl_vector() noexcept {
+        initialize(_InitialCapacity);
+    }
+
+    explicit skl_vector(u64 f_initial_capacity) noexcept {
+        initialize(f_initial_capacity);
+    }
+
+    skl_vector(const skl_vector& f_other) noexcept {
+        copy<true>(f_other);
+    }
+
+    skl_vector& operator=(const skl_vector& f_other) noexcept {
+        SKL_ASSERT(this != &f_other);
+        copy<false>(f_other);
+        return *this;
+    }
+
+    skl_vector(skl_vector&& f_other) noexcept {
+        move<true>(static_cast<skl_vector&&>(f_other));
+    }
+
+    skl_vector& operator=(skl_vector&& f_other) noexcept {
+        SKL_ASSERT(this != &f_other);
+        move<false>(static_cast<skl_vector&&>(f_other));
+        return *this;
+    }
+
+    ~skl_vector() noexcept {
+        if (m_start) {
+            if constexpr (false == __is_trivial(_T)) {
+                destruct_objects();
+            }
+
+            free_buffer();
+        } else {
+            SKL_ASSERT(nullptr == m_finish);
+            SKL_ASSERT(nullptr == m_storage_end);
+        }
+    }
+
+    //! Is this vector empty
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return m_finish == m_start;
+    }
+
+    //! Get the vector capacity (in objects)
+    [[nodiscard]] constexpr u64 capacity() const noexcept {
+        return m_storage_end - m_start;
+    }
+
+    //! Get the vector size (in objects)
+    [[nodiscard]] constexpr u64 size() const noexcept {
+        return m_finish - m_start;
+    }
+
+    //! Is this vector valid (has storage allocated)
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return (nullptr != m_start) && (nullptr != m_finish) && (nullptr != m_storage_end);
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] iskl_vector<_T>& upgrade() noexcept {
+        return *reinterpret_cast<iskl_vector<_T>*>(this);
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] const iskl_vector<_T>& upgrade() const noexcept {
+        return *reinterpret_cast<const iskl_vector<_T>*>(this);
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] _T* data() noexcept {
+        return m_start;
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] const _T* data() const noexcept {
+        return m_start;
+    }
+
+    //! operator[]
+    [[nodiscard]] _T& operator[](u64 f_index) noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! operator[]
+    [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! Clear the vector, destroying all objects if needed
+    void clear() noexcept {
+        if constexpr (false == __is_trivial(_T)) {
+            destruct_objects();
+        }
+
+        m_finish = m_start;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] _T* begin() noexcept {
+        return m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] _T* end() noexcept {
+        return m_finish;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] const _T* begin() const noexcept {
+        return m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] const _T* end() const noexcept {
+        return m_finish;
+    }
+
+private:
+    void initialize(u64 f_initial_capacity) noexcept {
+        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
+        m_finish      = m_start;
+        m_storage_end = m_start + f_initial_capacity;
+
+        SKL_ASSERT_CRITICAL(nullptr != m_start);
+    }
+
+    void initialize(u64 f_initial_capacity, u64 f_size) noexcept {
+        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
+        m_finish      = m_start + f_size;
+        m_storage_end = m_start + f_initial_capacity;
+
+        SKL_ASSERT_CRITICAL(nullptr != m_start);
+    }
+
+    template <typename = _T>
+    void destruct_objects() noexcept
+        requires((false == __is_trivial(_T)) && IsTypeNoThrowDestructible)
+    {
+        for (u64 i = 0U; i < size(); ++i) {
+            m_start[i].~_T();
+        }
+    }
+
+    template <bool _IsForCtor>
+    void copy(const skl_vector& f_other) noexcept {
+        const auto other_size = f_other.size();
+
+        //Preapre the target buffer
+        if constexpr (_IsForCtor) {
+            initialize(f_other.capacity(), other_size);
+        } else {
+            clear();
+
+            if (capacity() < other_size) {
+                //We need bigger buffer
+                free_buffer();
+                initialize(f_other.capacity(), other_size);
+            } else {
+                //Adjust the size
+                m_finish = m_start + other_size;
+            }
+        }
+
+        //Perform the copy
+        if constexpr (__is_trivial(_T)) {
+            skl_vector_memcpy(data(), f_other.data(), sizeof(_T) * other_size);
+        } else {
+            for (u64 i = 0U; i < other_size; ++i) {
+                new (&m_start[i]) _T(f_other.m_start[i]);
+            }
+        }
+    }
+
+    template <bool _IsForCtor>
+    void move(skl_vector&& f_other) noexcept {
+        //Clear current vector if needed
+        if constexpr (false == _IsForCtor) {
+            if (nullptr != m_start) {
+                if constexpr (false == __is_trivial(_T)) {
+                    destruct_objects();
+                }
+
+                free_buffer();
+            } else {
+                SKL_ASSERT(nullptr == m_finish);
+                SKL_ASSERT(nullptr == m_storage_end);
+            }
+        }
+
+        //Perform the move
+        m_start       = f_other.m_start;
+        m_finish      = f_other.m_finish;
+        m_storage_end = f_other.m_storage_end;
+
+        f_other.m_start       = nullptr;
+        f_other.m_finish      = nullptr;
+        f_other.m_storage_end = nullptr;
+    }
+
+    void free_buffer() noexcept {
+        SKL_ASSERT(nullptr != m_start);
+
+        skl_vector_free(m_start);
+
+        m_start       = nullptr;
+        m_finish      = nullptr;
+        m_storage_end = nullptr;
+    }
+
+private:
+    _T* m_start       = nullptr;
+    _T* m_finish      = nullptr;
+    _T* m_storage_end = nullptr;
+
+    friend iskl_vector<_T>;
+};
+} // namespace skl

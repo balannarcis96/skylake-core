@@ -1,0 +1,11 @@
+//!
+//! \file skl_debug_trap
+//!
+//! \brief clang 19+ - debug break util
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+static_assert(__has_builtin(__builtin_debugtrap));
+#define skl_debug_brake() __builtin_debugtrap()

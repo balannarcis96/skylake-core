@@ -1,0 +1,76 @@
+//!
+//! \file skl_sguid
+//!
+//! \brief small guid
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_buffer_view"
+
+namespace skl {
+//! Simple, 4 random bytes small-guid
+//! \remark Default constructs to the null-guid (4 zero bytes)
+struct SGUID {
+    static constexpr byte CSize = 4U;
+    static const SGUID    CNull;
+
+    //! Default construct as null-guid
+    SGUID() noexcept
+        : m_data{0U, 0U, 0U, 0U} {
+    }
+
+    //! Construct with specific bytes
+    SGUID(byte bytes[CSize]) noexcept
+        : m_data{bytes[0U], bytes[1U], bytes[2U], bytes[3U]} {
+    }
+
+    SGUID(const SGUID&) noexcept            = default;
+    SGUID& operator=(const SGUID&) noexcept = delete;
+    SGUID(SGUID&&) noexcept                 = delete;
+    SGUID& operator=(SGUID&&) noexcept      = delete;
+    ~SGUID() noexcept                       = default;
+
+    [[nodiscard]] u32 raw() const noexcept {
+        return *reinterpret_cast<const u32*>(m_data);
+    }
+
+    [[nodiscard]] bool operator==(const SGUID& f_other) const noexcept {
+        return raw() == f_other.raw();
+    }
+
+    [[nodiscard]] bool operator!=(const SGUID& f_other) const noexcept {
+        return raw() != f_other.raw();
+    }
+
+    [[nodiscard]] bool is_null() const noexcept {
+        return *reinterpret_cast<const u32*>(m_data) == u32(0U);
+    }
+
+    void to_string(skl_buffer_view f_target_buffer) const noexcept;
+
+    [[nodiscard]] byte operator[](u64 f_index) const noexcept{
+        return m_data[f_index];
+    }
+
+private:
+    const byte m_data[CSize];
+};
+
+//! [LibInit][ThreadLocal] Make new small-guid
+[[nodiscard]] SGUID make_sguid() noexcept;
+
+//! [LibInit][ThreadLocal] Make new small-guid
+//! \remark Faster, less "collision-safe"
+[[nodiscard]] SGUID make_sguid_fast() noexcept;
+
+//! Make new small-guid
+//! \remark Creates new instance of SklRand on each call
+[[nodiscard]] SGUID g_make_sguid() noexcept;
+
+//! Make new small-guid
+//! \remark Creates new instance of SklRand on each call
+//! \remark Faster, less "collision-safe"
+[[nodiscard]] SGUID g_make_sguid_fast() noexcept;
+} // namespace skl

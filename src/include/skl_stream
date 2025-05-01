@@ -1,0 +1,393 @@
+//!
+//! \file skl_stream
+//!
+//! \brief byte buffer manipulation util (non owning abstraction)
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_buffer_view"
+#include "skl_assert"
+#include "skl_status"
+#include "skl_pair"
+#include "skl_string_view"
+
+namespace skl {
+//! [ATRP]
+struct skl_stream {
+public:
+    //ATRP
+    skl_stream() noexcept                    = delete;
+    ~skl_stream() noexcept                   = delete;
+    skl_stream(const skl_stream&)            = delete;
+    skl_stream& operator=(const skl_stream&) = delete;
+    skl_stream(skl_stream&&)                 = delete;
+    skl_stream& operator=(skl_stream&&)      = delete;
+
+    //General API
+    [[nodiscard]] u32 position() const noexcept {
+        return root()->position;
+    }
+    [[nodiscard]] u32 length() const noexcept {
+        return root()->length;
+    }
+    [[nodiscard]] byte* buffer() const noexcept {
+        return root()->buffer;
+    }
+    [[nodiscard]] byte* buffer() noexcept {
+        return root()->buffer;
+    }
+    [[nodiscard]] byte* front() const noexcept {
+        return buffer() + position();
+    }
+    [[nodiscard]] byte* front() noexcept {
+        return buffer() + position();
+    }
+    [[nodiscard]] u32 remaining() const noexcept {
+        return length() - position();
+    }
+    [[nodiscard]] bool eos() const noexcept {
+        return 0 == remaining();
+    }
+    [[nodiscard]] bool is_valid() const noexcept {
+        return nullptr != buffer() && 0U < length();
+    }
+    [[nodiscard]] skl_buffer_view sub_view(u32 f_length, u32 f_offset = 0U) const noexcept {
+        SKL_ASSERT(is_valid());
+        SKL_ASSERT(f_offset < length());
+        SKL_ASSERT(f_length < (length() - f_offset));
+        return {u64(f_length), buffer() + f_offset};
+    }
+    [[nodiscard]] skl_buffer_view remaining_view() const noexcept {
+        SKL_ASSERT(is_valid());
+        SKL_ASSERT(0U < remaining());
+        return {remaining(), front()};
+    }
+
+    //Seek API
+    void seek_forward(u32 f_delta) noexcept {
+        SKL_ASSERT(f_delta <= remaining());
+        root()->position += f_delta;
+    }
+    void seek_backward(u32 f_delta) noexcept {
+        SKL_ASSERT(f_delta <= position());
+        root()->position -= f_delta;
+    }
+    void seek_end() noexcept {
+        root()->position = length();
+    }
+    void seek_start() noexcept {
+        root()->position = 0U;
+    }
+    void seek_exact(u32 f_new_position) noexcept {
+        SKL_ASSERT(f_new_position < length());
+        root()->position = f_new_position;
+    }
+    void reset() noexcept {
+        seek_start();
+    }
+
+    //Cast based on the current position
+    template <typename T>
+    [[nodiscard]] T* cast() noexcept {
+        SKL_ASSERT(sizeof(T) <= remaining());
+        return reinterpret_cast<T*>(front());
+    }
+    template <typename T>
+    [[nodiscard]] const T* cast() const noexcept {
+        SKL_ASSERT(sizeof(T) <= remaining());
+        return reinterpret_cast<const T*>(front());
+    }
+    template <typename T>
+    [[nodiscard]] T& cast_ref() noexcept {
+        SKL_ASSERT(sizeof(T) <= remaining());
+        return *reinterpret_cast<T*>(front());
+    }
+    template <typename T>
+    [[nodiscard]] const T& cast_ref() const noexcept {
+        SKL_ASSERT(sizeof(T) <= remaining());
+        return *reinterpret_cast<const T*>(front());
+    }
+    template <typename T>
+    [[nodiscard]] T cast_val() const noexcept {
+        SKL_ASSERT(sizeof(T) <= remaining());
+        return T{cast_ref<T>()};
+    }
+
+    //Cast based on the start of the buffer
+    template <typename T>
+    [[nodiscard]] T* cast_buffer() noexcept {
+        SKL_ASSERT(sizeof(T) <= length());
+        return reinterpret_cast<T*>(buffer());
+    }
+    template <typename T>
+    [[nodiscard]] const T* cast_buffer() const noexcept {
+        SKL_ASSERT(sizeof(T) <= length());
+        return reinterpret_cast<const T*>(buffer());
+    }
+    template <typename T>
+    [[nodiscard]] T& cast_buffer_ref() noexcept {
+        SKL_ASSERT(sizeof(T) <= length());
+        return *reinterpret_cast<T*>(buffer());
+    }
+    template <typename T>
+    [[nodiscard]] const T& cast_buffer_ref() const noexcept {
+        SKL_ASSERT(sizeof(T) <= length());
+        return *reinterpret_cast<const T*>(buffer());
+    }
+    template <typename T>
+    [[nodiscard]] T cast_buffer_val() const noexcept {
+        SKL_ASSERT(sizeof(T) <= length());
+        return T{cast_buffer_ref<T>()};
+    }
+
+    //! Cast the buffer to a c str ptr (starting at the current position)
+    [[nodiscard]] const char* c_str() const noexcept {
+        SKL_ASSERT(0U < remaining());
+        return reinterpret_cast<const char*>(front());
+    }
+
+    //! Can the stream fit \p f_bytes_count bytes into the buffer starting at the current position
+    [[nodiscard]] bool fits(u32 f_bytes_count) const noexcept {
+        return remaining() >= f_bytes_count;
+    }
+
+    //! Count the non zero bytes starting from current position up to length()
+    //! \return <u32: bytes couted, bool: [true] = could not find a zero byte and reached end>
+    [[nodiscard]] pair<u32, bool> count_non_zero() const noexcept;
+
+    //! Seek forward until after a zero byte is found (skip c-string)
+    //! \return <u32: bytes skipped (including zero byte), bool: [true] = could not find a zero byte and reached end>
+    //! \remark Used to essentially advance stream position to skip and get length of cstrings
+    [[nodiscard]] pair<u32, bool> skip_cstring() noexcept;
+
+    //! Seek forward until after a zero byte is found (skip c-string)
+    //! \return Buffer view to the c-string starting at the current position
+    //! \remark The position is advanced to after the c-string end
+    //! \remark If the null-terminator was not found, the resulted view length=remaining()
+    [[nodiscard]] skl_buffer_view cstring_view() noexcept {
+        auto       result      = remaining_view();
+        const auto skip_result = skip_cstring();
+        result.length        = skip_result.first;
+        return result;
+    }
+    //Write API
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \returns true if the whole \p f_source_size bytes were copied from \p source
+    //! \returns false if \p f_source_size bytes do not fit in the buffer
+    [[nodiscard]] bool write(const byte* f_source, u32 f_source_size) noexcept;
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \returns true if the whole \p f_source_size bytes were copied from \p source
+    //! \returns false if \p f_source_size bytes do not fit in the buffer
+    template <u32 _N>
+    [[nodiscard]] bool write(const byte (&f_source)[_N]) noexcept {
+        return write(f_source, _N);
+    }
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \remark Asserts that \p f_source_size fits in the remaining()
+    void write_unsafe(const byte* f_source, u32 f_source_size) noexcept;
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \remark Asserts that \p f_source_size fits in the remaining()
+    void write_unsafe(const char* f_source, u32 f_source_size) noexcept {
+        write_unsafe(reinterpret_cast<const byte*>(f_source), f_source_size);
+    }
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \remark Asserts that \p f_source_size fits in the remaining()
+    template <u32 _N>
+    void write_unsafe(const byte (&f_source)[_N]) noexcept {
+        write_unsafe(f_source, _N);
+    }
+
+    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
+    //! \remark Asserts that \p f_source_size fits in the remaining()
+    template <u32 _N>
+    void write_unsafe(const char (&f_source)[_N]) noexcept {
+        write_unsafe(reinterpret_cast<const byte*>(f_source), _N);
+    }
+
+    //! Write value into the buffer
+    //! \remark Asserts that the whole \p f_value bytes can be written
+    template <typename _Type>
+    void write(_Type f_value) noexcept {
+        constexpr u32 CValueSize = sizeof(_Type);
+        static_assert(__is_trivial(_Type));
+
+        if constexpr (CValueSize <= (SKL_CACHE_LINE_SIZE / 2)) {
+            SKL_ASSERT(fits(CValueSize));
+            *reinterpret_cast<_Type*>(front()) = f_value;
+            seek_forward(CValueSize);
+        } else {
+            const auto b_result = write(reinterpret_cast<const byte*>(&f_value), CValueSize);
+            SKL_ASSERT(b_result);
+            (void)b_result;
+        }
+    }
+
+    //! Write value into the buffer
+    //! \return true if the value was successfully written
+    //! \return true if the value cannot fit into the buffer
+    template <typename _Type>
+    [[nodiscard]] bool write_safe(_Type f_value) noexcept {
+        constexpr u32 CValueSize = sizeof(_Type);
+
+        if (fits(CValueSize)) [[likely]] {
+            static_assert(__is_trivial(_Type));
+            if constexpr (CValueSize <= (SKL_CACHE_LINE_SIZE / 2)) {
+                *reinterpret_cast<_Type*>(front()) = f_value;
+                seek_forward(CValueSize);
+                [[likely]] return true;
+            } else {
+                return write(reinterpret_cast<const byte*>(&f_value), CValueSize);
+            }
+        }
+
+        return false;
+    }
+
+    //! Write string into buffer at current stream position
+    //! \remark Copies all non zero chars from \p f_string plus one zero char (null terminator)
+    //! \return true if the whole \p f_string was successfully written
+    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
+    //! \note If the string exact size is known, use any of the write() function
+    [[nodiscard]] bool write_str(const char* const f_string) noexcept;
+
+    //! Write string into buffer at current stream position
+    //! \remark Copies up to \p f_copy_max charaters from \p f_string into the internal buffer
+    //! \return true if the whole \p f_string was successfully written
+    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
+    //! \note If the string exact size is known, use any of the write() function
+    [[nodiscard]] bool write_str(const char* const f_string, u32 f_copy_max) noexcept;
+
+    //! Write string into buffer at current stream position
+    //! \remark Copies up to \p _N charaters from \p f_string into the internal buffer
+    //! \return true if the whole \p f_string was successfully written
+    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
+    //! \note If the string exact size is known, use any of the write() function
+    template <u32 _N>
+    [[nodiscard]] bool write_str(const char (&f_string)[_N]) noexcept {
+        return write_str(f_string, _N);
+    }
+
+    //! Write string into buffer at current stream position
+    //! \remark Copies up to \p _N charaters from \p f_string into the internal buffer
+    //! \return true if the whole \p f_string was successfully written
+    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
+    //! \note If the string exact size is known, use any of the write() functions
+    [[nodiscard]] bool write_str(skl_string_view f_string) noexcept {
+        return write_str(f_string.data(), f_string.length());
+    }
+
+    //! Write string into buffer at current stream position
+    //! \remark Copies up to \p f_copy_max charaters from \p f_string into the internal buffer
+    //! \invariant (Asserted) The whole \p f_string (with null terminator) fits in the remaining buffer
+    //! \note If the string exact size is known, use any of the write_unsafe() function
+    void write_str_unsafe(const char* const f_string) noexcept;
+
+    //! Copy bytes from the given file into the buffer starting at the current position
+    //! \returns SKL_ERR_EMPTY If the file is empty
+    //! \returns SKL_ERR_READ If a read error occurred or the file is
+    //! \returns SKL_ERR_FILE If could not open the file
+    //! \returns SKL_ERR_TRUN If the file cannot fit in the buffer starting at the current position
+    //! \returns SKL_SUCCESS If the file was successfully, fully read into the buffer or the file is empty
+    [[nodiscard]] skl_status read_from_file(const char* f_file_name) noexcept;
+
+    //! Copy characters from the given file into the buffer starting at the current position
+    //! \returns SKL_ERR_EMPTY If the file is empty
+    //! \returns SKL_ERR_READ If a read error occurred or the file is
+    //! \returns SKL_ERR_FILE If could not open the file
+    //! \returns SKL_ERR_TRUN If the file cannot fit in the buffer starting at the current position
+    //! \returns SKL_SUCCESS If the file was successfully, fully read into the buffer or the file is empty
+    [[nodiscard]] skl_status read_from_text_file(const char* f_file_name) noexcept;
+
+    //! Zero the whole buffer
+    void zero() noexcept;
+
+    //! Zero the the remaining portion of the buffer (does nothing if IsEOS() == true)
+    void zero_remaining() noexcept;
+
+    //Read API
+
+    //! Read value of type \p _Type from the buffer and advance position by sizeof(_Type)
+    //! \remark Asserts that remaining() >= sizeof(_Type)
+    template <typename _Type>
+    [[nodiscard]] _Type read() noexcept {
+        constexpr u32 _TypeSize = sizeof(_Type);
+        SKL_ASSERT(_TypeSize <= remaining());
+        seek_forward(_TypeSize);
+        return *reinterpret_cast<const _Type*>(front() - _TypeSize);
+    }
+
+    //! Read value of type \p _Type from the buffer and advance position by sizeof(_Type)
+    //! \remark If remaining() < sizeof(_Type) -> \p f_default is returned
+    template <typename _Type>
+    [[nodiscard]] _Type try_read(_Type f_default) noexcept {
+        constexpr u32 _TypeSize = sizeof(_Type);
+        if (_TypeSize <= remaining()) {
+            seek_forward(_TypeSize);
+            [[likely]] return *reinterpret_cast<const _Type*>(front() - _TypeSize);
+        }
+
+        return f_default;
+    }
+
+    //! Read \p f_read_size bytes from the buffer starting at the current position into \p f_dest
+    //! \remark On success, the position is advanced by \p read_size
+    //! \return true on success read
+    //! \return false if the \p f_read_size is greater than remaining()
+    [[nodiscard]] bool read(byte* f_dest, u32 f_read_size) noexcept;
+
+    //! Write all bytes starting at the current position till the end into a truncated file \p f_file_name
+    //! \returns SKL_ERR_EMPTY If there is nothing to write (remaining() == 0)
+    //! \returns SKL_ERR_WRITE If a read error occurred or the file is
+    //! \returns SKL_ERR_FILE If could not open(truncate) the file
+    //! \returns SKL_SUCCESS If the file was successfully, fully read into the buffer or the file is empty
+    [[nodiscard]] skl_status write_to_file(const char* f_file_name) const noexcept;
+
+    [[nodiscard]] byte& operator[](u32 index) noexcept {
+        SKL_ASSERT_CRITICAL(is_valid());
+        SKL_ASSERT_CRITICAL(index < length());
+        return buffer()[index];
+    }
+
+    [[nodiscard]] const byte& operator[](u32 index) const noexcept {
+        SKL_ASSERT_CRITICAL(is_valid());
+        SKL_ASSERT_CRITICAL(index < length());
+        return buffer()[index];
+    }
+
+    //ATPR
+    [[nodiscard]] static skl_stream& make(skl_buffer_view& f_ref) noexcept {
+        return reinterpret_cast<skl_stream&>(f_ref);
+    }
+    [[nodiscard]] static skl_stream& make(skl_buffer_view* f_ptr) noexcept {
+        SKL_ASSERT(nullptr != f_ptr);
+        return *reinterpret_cast<skl_stream*>(f_ptr);
+    }
+    [[nodiscard]] static const skl_stream& make(const skl_buffer_view& f_ref) noexcept {
+        return reinterpret_cast<const skl_stream&>(f_ref);
+    }
+    [[nodiscard]] static const skl_stream& make(const skl_buffer_view* const f_ptr) noexcept {
+        SKL_ASSERT(nullptr != f_ptr);
+        return *reinterpret_cast<const skl_stream*>(f_ptr);
+    }
+    [[nodiscard]] static skl_stream* make_nullable(skl_buffer_view* f_ptr) noexcept {
+        return reinterpret_cast<skl_stream*>(f_ptr);
+    }
+    [[nodiscard]] static const skl_stream* make_nullable(const skl_buffer_view* f_ptr) noexcept {
+        return reinterpret_cast<const skl_stream*>(f_ptr);
+    }
+    [[nodiscard]] skl_buffer_view* root() noexcept {
+        return reinterpret_cast<skl_buffer_view*>(this);
+    }
+    [[nodiscard]] const skl_buffer_view* root() const noexcept {
+        return reinterpret_cast<const skl_buffer_view*>(this);
+    }
+};
+
+} // namespace skl

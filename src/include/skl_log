@@ -1,0 +1,86 @@
+//!
+//! \file skl_log
+//!
+//! \brief log utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <tune_skl_core_public.h>
+
+#include "skl_logger/skl_slogger_fend.hpp"
+
+#define SKL_LOG_CONCATENATE_DETAIL(x, y) x##y
+#define SKL_LOG_CONCATENATE(x, y)        SKL_LOG_CONCATENATE_DETAIL(x, y)
+
+// Log into the current set sink (eg. stdout, file, net)
+// Use this where logging into the net sink makes sens
+#define SDEBUG(format, ...)   ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SINFO(format, ...)    ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SWARNING(format, ...) ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SERROR(format, ...)   ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SFATAL(format, ...)   ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+
+// Log into the current set sink (eg. stdout, file, net)
+// Use this where logging into the net sink makes sens (Tagged)
+#define SDEBUG_T(format, ...)   ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SINFO_T(format, ...)    ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SWARNING_T(format, ...) ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SERROR_T(format, ...)   ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SFATAL_T(format, ...)   ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+
+// Sink all local logs into stdout
+constexpr skl::slogger_sink_id_t CSLoggerLocalSink = ::skl::CSLoggerFileHandleSinkId;
+
+// Log into the local sink (eg. stdout, file etc)
+#define SDEBUG_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SINFO_LOCAL(format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SWARNING_LOCAL(format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SERROR_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SFATAL_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+
+// Log into the local sink (eg. stdout, file etc) (Tagged)
+#define SDEBUG_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SINFO_LOCAL_T(format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SWARNING_LOCAL_T(format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SERROR_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#define SFATAL_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+
+#define SLOGGER_SINK_NET    skl::CSLoggerNetSinkId
+#define SLOGGER_SINK_FILE_H skl::CSLoggerFileHandleSinkId
+#define SLOGGER_SINK_FILE   skl::CSLoggerFileSinkId
+#define SLOGGER_SINK_CUSTOM skl::CSLoggerCustomSink
+
+// Log into the specific sink (eg, SLOGGER_SINK_NET, SLOGGER_SINK_FILE_H etc)
+#define SDEBUG_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SINFO_SPECIFIC(sink, format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SWARNING_SPECIFIC(sink, format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SERROR_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#define SFATAL_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+
+// [LibInit] Trace call utility
+#define STRACE                                                                                                                                                 \
+    struct SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) {                                                                                                      \
+        const char* m_fn_name;                                                                                                                                 \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &)             = delete;                               \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &) = delete;                               \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)                  = delete;                               \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)      = delete;                               \
+        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const char* f_fn_name) noexcept                                                                           \
+            : m_fn_name(f_fn_name) {                                                                                                                           \
+            ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, ">> {}", f_fn_name); \
+        }                                                                                                                                                      \
+        ~SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)() noexcept {                                                                                             \
+            ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, "<< {}", m_fn_name); \
+        }                                                                                                                                                      \
+    } SKL_LOG_CONCATENATE(__TraceUtility_, __LINE__){__PRETTY_FUNCTION__};
+
+#define SKL_IP_TO_LOG(ip)   ((ip >> 24U) & 0xFFU), ((ip >> 16U) & 0xFFU), ((ip >> 8U) & 0xFFU), ip & 0xFFU
+#define SKL_IP_LOG_WILDCARD "{}.{}.{}.{}"
+
+#define SKL_MAC_TO_LOG(MAC)  i32(MAC[0U]), i32(MAC[1U]), i32(MAC[2U]), i32(MAC[3U]), i32(MAC[4U]), i32(MAC[5U])
+#define SKL_MAC_LOG_WILDCARD "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}"
+//Eg SDEBUG_LOCAL("asdasd " SKL_IP_LOG_WILDCARD " asdasd", SKL_IP_TO_LOG(ip))
+
+// @TODO: Define log macros based on the current logging level

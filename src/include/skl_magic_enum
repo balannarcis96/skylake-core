@@ -1,0 +1,24 @@
+//!
+//! \file skl_magic_enum
+//!
+//! \brief enum -> string or string -> enum - utils using the magic enum lib
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+//! \remark Using the MagicEnum lib (https://github.com/Neargye/magic_enum) (MIT)
+//!
+#pragma once
+
+#include <magic_enum.h>
+
+namespace skl {
+//! Get the string for a given enum entry
+constexpr const char* enum_to_string(auto EnumValue) noexcept {
+    return magic_enum::enum_name(EnumValue).data();
+}
+//! Get the enum value given a cstring
+template <typename TEnum>
+constexpr std::optional<TEnum> enum_from_string(const char* InString) noexcept {
+    return magic_enum::enum_cast<TEnum>(InString);
+}
+} // namespace skl

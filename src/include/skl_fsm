@@ -1,0 +1,784 @@
+//!
+//! \file SklFsm
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_result"
+#include "skl_epoch"
+#include "skl_def"
+#include "skl_traits/same_as"
+#include "skl_traits/forward"
+
+/*
+ * Skylake fsm crafting toolset
+ * 
+ *  SklFsm provides the base toolset for crafting high performance, efficient and bespoke tick based FSMs.
+ *  
+ *  - header only
+ *  - no dependency
+ *  - CRTP based (no virtual)
+ *  - c++20
+ *  
+ * See <skl_fsm_example> for more details.
+ */
+
+namespace skl::fsm {
+using state_t           = i16;
+using transient_state_t = i16;
+using sub_state_t       = i16;
+
+//! Default fsm exit state
+constexpr state_t CExitState = -1;
+
+//! Default fsm transient state
+constexpr state_t CTransientState = 0;
+
+//! Invalid transient state
+constexpr transient_state_t CInvalidTransientState = -1;
+
+//! All custom fsm states must start from this index (including)
+constexpr state_t CCustomStatesStart = CTransientState + 1;
+
+//! All custom fsm states max value (including)
+constexpr state_t CCustomStatesMax = CCustomStatesStart + 1024;
+
+//! All custom fsm transient states max value (including)
+constexpr transient_state_t CCustomTransientStatesMax = 1024;
+
+namespace concepts {
+    template <typename _Impl>
+    concept skl_fsm_impl_c = requires(_Impl t, state_t s) {
+        { t.fsm_tick_state(s) } noexcept -> same_as<state_t>;
+    };
+
+    template <typename _Impl>
+    concept skl_fsm_impl_transient_c = requires(_Impl t, transient_state_t s) {
+        { t.fsm_tick_transient_state(s) } noexcept -> same_as<skl_result<skl_status>>;
+    };
+
+    template <typename _Impl>
+    concept skl_fsm_impl_reset_handler_c = requires(_Impl t) {
+        { t.fsm_on_reset() } noexcept;
+    };
+
+    template <typename _Impl>
+    concept skl_fsm_impl_state_change_handler_c = requires(_Impl impl, state_t t) {
+        { impl.fsm_on_state_changed(t, t) } noexcept -> same_as<bool>;
+    };
+} // namespace concepts
+
+namespace state {
+    template <bool _SupportTransientStates>
+    struct skl_fsm_state_t;
+
+    struct skl_fsm_transient_state_t {
+        skl_fsm_transient_state_t() noexcept
+            : transient_result(SKL_SUCCESS) { }
+
+        SKL_DEFAULT_COPY_MOVE_DTOR(skl_fsm_transient_state_t);
+
+        //! Currently executed transient state
+        transient_state_t transient_state;
+
+        //! Next state when exiting the current transient state
+        state_t transient_next_state;
+
+        //! Result of the last transient state execution (if any)
+        skl_status transient_result;
+
+        //! Current transient substate
+        sub_state_t transient_sub_state;
+    };
+
+    template <>
+    struct skl_fsm_state_t<false> {
+        constexpr skl_fsm_state_t(state_t f_start_state) noexcept
+            : CStartState(f_start_state) {
+            reset();
+        }
+
+        SKL_DEFAULT_COPY_MOVE_DTOR(skl_fsm_state_t);
+
+        //! Restart the fsm state
+        //! \p f_delay_start_ms Milliseconds to delay the start
+        void reset(u32 f_delay_start_ms = 0U) noexcept {
+            const auto now = get_current_epoch_time();
+
+            current_state          = CStartState;
+            last_state             = CStartState;
+            sub_state              = 0;
+            resume_timepoint       = (now + f_delay_start_ms);
+            state_start_timepoint  = now;
+            state_tick_count       = 0ULL;
+            flags.flags            = 0U;
+            transition_flags.flags = 0U;
+
+            flags.bIsWaiting = u8(0U < f_delay_start_ms);
+        }
+
+        //! Current fsm state
+        state_t current_state;
+
+        //! Last fsm state
+        state_t last_state;
+
+        union {
+            struct
+            {
+                // Forcefully exit the fsm
+                u8 bIsForcedExit : 1;
+
+                // The last transient had a fata failure, exit the fsm.
+                u8 bTransientStateHasFatalFailure : 1;
+
+                // Is the fsm currently waiting
+                u8 bIsWaiting : 1;
+            };
+            u8 flags;
+        } flags;
+
+        union {
+            struct
+            {
+                // Should consume any set flags on current tick
+                u8 bConsumeFlags : 1;
+
+                // Reset the state start time
+                u8 bResetStateStartTime : 1;
+
+                // Reset the substate
+                u8 bResetSubState : 1;
+
+                // Reset the state ticks count
+                u8 bResetTicksCount : 1;
+            };
+            u8 flags;
+        } transition_flags;
+
+        //! Current substate
+        sub_state_t sub_state;
+
+        //! FSM resume timepoint (when waiting)
+        epoch_time_point_t resume_timepoint;
+
+        //! FSM start timepoint
+        epoch_time_point_t start_timepoint;
+
+        //! Current state start timepoint
+        epoch_time_point_t state_start_timepoint;
+
+        //! Tick counts while in the current state
+        u64 state_tick_count;
+
+        //! Default start state
+        state_t CStartState;
+    };
+
+    template <>
+    struct skl_fsm_state_t<true> : skl_fsm_transient_state_t, skl_fsm_state_t<false> {
+        skl_fsm_state_t(state_t f_start_state) noexcept
+            : skl_fsm_state_t<false>(f_start_state) { }
+
+        SKL_DEFAULT_COPY_MOVE_DTOR(skl_fsm_state_t);
+
+        //! Restart the fsm state
+        //! \p f_delay_start_ms Milliseconds to delay the start
+        void reset(u32 f_delay_start_ms = 0U) noexcept {
+            skl_fsm_state_t<false>::reset(f_delay_start_ms);
+            transient_sub_state = 0U;
+        }
+    };
+} // namespace state
+
+template <typename _Impl>
+class SklFsm;
+
+template <typename _TUpper, bool _SupportTransientStates = false>
+class SklFsmOps {
+public:
+    static constexpr bool COpsSupportsTransientStates = _SupportTransientStates;
+
+    using my_state_t = state::skl_fsm_state_t<COpsSupportsTransientStates>;
+
+    constexpr SklFsmOps() noexcept
+        : m_state(CCustomStatesStart) { }
+
+    explicit constexpr SklFsmOps(state_t f_start_state) noexcept
+        : m_state(f_start_state) { }
+
+    //! Is the fsm currently in the given \p f_state ?
+    [[nodiscard]] constexpr bool fsm_is_current_state(state_t f_state) const noexcept {
+        return m_state.current_state == f_state;
+    }
+
+    //! Is the fsm currently in the given \p f_sub_state ?
+    [[nodiscard]] constexpr bool fsm_is_current_sub_state(sub_state_t f_sub_state) const noexcept {
+        return m_state.sub_state == f_sub_state;
+    }
+
+    //! Is the fsm currently in the given transient \p f_state ?
+    [[nodiscard]] constexpr bool fsm_is_current_transient_state(transient_state_t f_state) const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return fsm_is_current_state(CTransientState) && (m_state.transient_state == f_state);
+    }
+
+    //! Get the fsm current state
+    [[nodiscard]] constexpr state_t fsm_state() const noexcept {
+        return m_state.current_state;
+    }
+
+    //! Get the fsm last state
+    [[nodiscard]] constexpr state_t fsm_last_state() const noexcept {
+        return m_state.last_state;
+    }
+
+    //! Get the fsm current sub state
+    [[nodiscard]] constexpr state_t fsm_sub_state() const noexcept {
+        return m_state.sub_state;
+    }
+
+    //! Get the fsm current transient state
+    [[nodiscard]] constexpr transient_state_t fsm_transient_state() const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.transient_state;
+    }
+
+    //! Get the fsm current transient sub state
+    [[nodiscard]] constexpr state_t fsm_transient_sub_state() const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.transient_sub_state;
+    }
+
+    //! Is the fsm currently waiting
+    [[nodiscard]] constexpr bool fsm_is_waiting() const noexcept {
+        return m_state.flags.bIsWaiting;
+    }
+
+    //! Is the fsm currently waiting to go to a new state \p f_state
+    [[nodiscard]] constexpr bool fsm_is_waiting(state_t f_state) const noexcept {
+        return m_state.flags.bIsWaiting && (m_state.current_state == f_state);
+    }
+
+    //! Is the fsm currently waiting to transition to a transient state
+    [[nodiscard]] constexpr bool fsm_is_waiting_to_enter_transient() const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.flags.bIsWaiting && (m_state.current_state == CTransientState);
+    }
+
+    //! Is the fsm currently waiting to transition to transient state \p f_state
+    [[nodiscard]] constexpr bool fsm_is_waiting_to_enter_transient(transient_state_t f_state) const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.flags.bIsWaiting && (m_state.current_state == CTransientState) && (m_state.transient_state == f_state);
+    }
+
+    //State builidng API
+protected:
+    //! [FSM-API] Reset the fsm
+    [[nodiscard]] constexpr static state_t fsm_reset() noexcept {
+        return CExitState;
+    }
+
+    //! [FSM-API] Exit the fsm
+    [[nodiscard]] constexpr state_t fsm_exit() noexcept {
+        m_state.flags.bIsForcedExit = 1U;
+        return CExitState;
+    }
+
+    //! [FSM-API] Continue in current state and yield control
+    [[nodiscard]] constexpr state_t fsm_yield() const noexcept {
+        return fsm_state();
+    }
+
+    //! [FSM-API] Current state ticks count
+    [[nodiscard]] constexpr u64 fsm_state_ticks() const noexcept {
+        return m_state.state_tick_count;
+    }
+
+    //! [FSM-API] Current state start timepoint
+    [[nodiscard]] constexpr epoch_time_point_t fsm_state_start_timepoint() const noexcept {
+        return m_state.state_start_timepoint;
+    }
+
+    //! [FSM-API] Is/has the fsm executing/executed the first tick of the current state
+    [[nodiscard]] constexpr bool fsm_is_first_tick() const noexcept {
+        return m_state.state_tick_count == 0U;
+    }
+
+    //! [FSM-API] Get the time since the start of the current state
+    [[nodiscard]] constexpr epoch_time_duration_t fsm_state_time() const noexcept {
+        return epoch_time_duration_t(get_current_epoch_time() - m_state.state_start_timepoint);
+    }
+
+    //! [FSM-API] Go to a new state
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_goto(state_t f_new_state) noexcept {
+        SKL_ASSERT(f_new_state != fsm_state());
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return f_new_state;
+    }
+
+    //! [FSM-API] Go to the last fsm state
+    //! \remark Asserts (fsm_last_state() != fsm_state() || fsm_sub_state() != 0)
+    //! \remark Cannot return to same state on substate 0, this can cause infinite looping
+    [[nodiscard]] constexpr state_t fsm_goto_last_state() noexcept {
+        SKL_ASSERT((fsm_last_state() != fsm_state()) || (fsm_sub_state() != 0));
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return fsm_last_state();
+    }
+
+    //! [FSM-API] Go to the last fsm state
+    //! \remark Asserts (fsm_last_state() != fsm_state() || fsm_sub_state() != 0)
+    //! \remark Cannot return to same state on substate 0, this can cause infinite looping
+    [[nodiscard]] constexpr state_t fsm_goto_last_state_ex(u32 f_milliseconds) noexcept {
+        SKL_ASSERT((fsm_last_state() != fsm_state()) || (fsm_sub_state() != 0));
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_last_state();
+    }
+
+    //! [FSM-API] Go to a new sub state
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_goto_substate(sub_state_t f_new_sub_state) noexcept {
+        SKL_ASSERT(f_new_sub_state != fsm_sub_state());
+        m_state.sub_state = f_new_sub_state;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Go to a new sub state
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_goto_substate_ex(sub_state_t f_new_sub_state, bool f_reset_state_start_time, bool f_reset_state_ticks) noexcept {
+        SKL_ASSERT(f_new_sub_state != fsm_sub_state());
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.sub_state                             = f_new_sub_state;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Continue in current state after \p f_milliseconds
+    [[nodiscard]] constexpr state_t fsm_delay(u32 f_milliseconds) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = 0U;
+        m_state.transition_flags.bResetTicksCount     = 0U;
+        m_state.transition_flags.bResetSubState       = 0U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Continue in current state after \p f_milliseconds
+    [[nodiscard]] constexpr state_t fsm_delay_ex(u32 f_milliseconds, bool f_reset_state_start_time, bool f_reset_state_ticks, bool f_reset_sub_state) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = f_reset_sub_state;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_yield();
+    }
+
+    //! [FSM-API] Goto to \p f_new_state state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_goto(state_t f_new_state, u32 f_milliseconds) noexcept {
+        SKL_ASSERT(f_new_state != fsm_state());
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return f_new_state;
+    }
+
+    //! [FSM-API] Goto to \p f_new_state state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_goto_ex(state_t f_new_state, u32 f_milliseconds, bool f_reset_state_start_time, bool f_reset_state_ticks, bool f_reset_sub_state) noexcept {
+        SKL_ASSERT(f_new_state != fsm_state());
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = f_reset_sub_state;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return f_new_state;
+    }
+
+    //! [FSM-API] Goto to substate \p f_new_substate if the current state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_goto_substate(sub_state_t f_new_substate, u32 f_milliseconds) noexcept {
+        SKL_ASSERT(f_new_substate != fsm_sub_state());
+        m_state.resume_timepoint = get_current_epoch_time() + f_milliseconds;
+        m_state.flags.bIsWaiting = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Goto to substate \p f_new_substate if the current state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_goto_substate_ex(sub_state_t f_new_substate, u32 f_milliseconds, bool f_reset_state_start_time, bool f_reset_state_ticks) noexcept {
+        SKL_ASSERT(f_new_substate != fsm_sub_state());
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Fully reset current state
+    [[nodiscard]] constexpr state_t fsm_reset_state() noexcept {
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Selectively reset current state
+    [[nodiscard]] constexpr state_t fsm_reset_state_ex(bool f_reset_state_start_time, bool f_reset_state_ticks, bool f_reset_sub_state) noexcept {
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = f_reset_sub_state;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Fully reset curent state after \p f_milliseconds
+    [[nodiscard]] constexpr state_t fsm_delay_reset_state(u32 f_milliseconds) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Selectively reset curent state after \p f_milliseconds
+    [[nodiscard]] constexpr state_t fsm_delay_reset_state_ex(u32 f_milliseconds, bool f_reset_state_start_time, bool f_reset_state_ticks, bool f_reset_sub_state) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = f_reset_sub_state;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Fully reset current substate
+    [[nodiscard]] constexpr state_t fsm_reset_substate() noexcept {
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 0U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Selectively reset current substate
+    [[nodiscard]] constexpr state_t fsm_reset_substate_ex(bool f_reset_state_start_time, bool f_reset_state_ticks) noexcept {
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = 0U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Fully reset curent sub state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_reset_substate(u32 f_milliseconds) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //! [FSM-API] Selectively reset curent sub state after \p f_milliseconds
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_delay_reset_substate_ex(u32 f_milliseconds, bool f_reset_state_start_time, bool f_reset_state_ticks) noexcept {
+        m_state.resume_timepoint                      = get_current_epoch_time() + f_milliseconds;
+        m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
+        m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.flags.bIsWaiting                      = 1U;
+        return fsm_state();
+    }
+
+    //Transient state builidng API
+protected:
+    //! [FSM-TRANSIENT-API] Is the fsm in the current transient \p f_sub_state
+    [[nodiscard]] constexpr bool fsm_transient_is_substate(sub_state_t f_sub_state) const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.transient_sub_state == f_sub_state;
+    }
+
+    //! [FSM-TRANSIENT-API] Continue the execution of current transient state and yield controll
+    [[nodiscard]] constexpr static skl_result<skl_status> fsm_transient_yield() noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return skl_fail{};
+    }
+
+    //! [FSM-TRANSIENT-API] The current transient state is done (successfully), return to normal state processing
+    [[nodiscard]] constexpr static skl_result<skl_status> fsm_transient_done() noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return SKL_SUCCESS;
+    }
+
+    //! [FSM-TRANSIENT-API] The current transient state is done (successfully), return to normal state processing
+    [[nodiscard]] constexpr static skl_result<skl_status> fsm_transient_done(skl_status f_status) noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return f_status;
+    }
+
+    //! [FSM-TRANSIENT-API] The current transient state is done (failed), return to normal state processing
+    [[nodiscard]] constexpr static skl_result<skl_status> fsm_transient_done_fail() noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return SKL_ERR_FAIL;
+    }
+
+    //! [FSM-TRANSIENT-API] The current transient state is done (with fatal failure), exit the fsm
+    [[nodiscard]] constexpr skl_result<skl_status> fsm_transient_done_fatal() noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        m_state.flags.bTransientStateHasFatalFailure = 1U;
+        return SKL_ERR_FAIL;
+    }
+
+    //! [FSM-TRANSIENT-API] Get the result of the last transient state
+    [[nodiscard]] constexpr skl_status fsm_get_transient_result() const noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        return m_state.transient_result;
+    }
+
+    //! [FSM-TRANSIENT-API] Execute the given transient state \p f_transient_state and resume the execution of the current state
+    //! \remark Does not reset [state time] [state ticks] [sub state]
+    [[nodiscard]] constexpr state_t fsm_transit(transient_state_t f_transient_state) noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        m_state.transient_state      = f_transient_state;
+        m_state.transient_next_state = fsm_state();
+        m_state.transient_sub_state  = 0;
+        return CTransientState;
+    }
+
+    //! [FSM-TRANSIENT-API] Execute the given transient state \p f_transient_state and resume the execution of the current state with \p f_sub_state
+    //! \remark Resets [state time] [state ticks] [sub state]
+    [[nodiscard]] constexpr state_t fsm_transit_to_sub_state(transient_state_t f_transient_state, sub_state_t f_sub_state) noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        m_state.transient_state      = f_transient_state;
+        m_state.transient_next_state = fsm_state();
+        m_state.transient_sub_state  = 0;
+        m_state.sub_state            = f_sub_state;
+        return CTransientState;
+    }
+
+    //! [FSM-TRANSIENT-API] Execute the given transient \p f_transient_state state and go to the state given \p f_next_state
+    //! \remark Resets [state time] [state ticks] [sub state]
+    [[nodiscard]] constexpr state_t fsm_transit_to_state(transient_state_t f_transient_state, state_t f_next_state) noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 1U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.transient_state                       = f_transient_state;
+        m_state.transient_next_state                  = f_next_state;
+        m_state.transient_sub_state                   = 0;
+        return CTransientState;
+    }
+
+    //! [FSM-TRANSIENT-API] Execute the given transient \p f_transient_state state and go to the state given \p f_next_state with \p f_sub_state
+    //! \remark Resets [state time] [state ticks] [sub state]
+    [[nodiscard]] constexpr state_t fsm_transit_to_state(transient_state_t f_transient_state, state_t f_next_state, sub_state_t f_sub_state) noexcept
+        requires(COpsSupportsTransientStates)
+    {
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 0U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.sub_state                             = f_sub_state;
+        m_state.transient_state                       = f_transient_state;
+        m_state.transient_next_state                  = f_next_state;
+        m_state.transient_sub_state                   = 0;
+        return CTransientState;
+    }
+
+private:
+    my_state_t m_state;
+
+    friend SklFsm<_TUpper>;
+};
+
+template <typename _TUpper>
+using SklFsmTransientOps = SklFsmOps<_TUpper, true>;
+
+template <typename _Ops>
+class SklFsm final {
+public:
+    static constexpr bool CImplIsValid                 = concepts::skl_fsm_impl_c<_Ops>;
+    static constexpr bool CImplSupportsTransientStates = concepts::skl_fsm_impl_transient_c<_Ops>;
+    static constexpr bool CImplHasResetHandler         = concepts::skl_fsm_impl_reset_handler_c<_Ops>;
+    static constexpr bool CImplHasStateChangeHandler   = concepts::skl_fsm_impl_state_change_handler_c<_Ops>;
+
+    static_assert((false == _Ops::COpsSupportsTransientStates) || CImplSupportsTransientStates);
+
+    SklFsm() noexcept = default;
+
+    template <typename... TArgs>
+    explicit SklFsm(TArgs... f_args) noexcept
+        : m_ops(skl_fwd<TArgs>(f_args)...) { }
+
+    SKL_DEFAULT_COPY_MOVE_DTOR(SklFsm);
+
+    //! [FSM] Tick the fsm
+    //! \returns false on exit
+    [[nodiscard]] constexpr bool tick() noexcept
+        requires(CImplIsValid)
+    {
+        const auto now = get_current_epoch_time();
+        if (now < m_ops.m_state.resume_timepoint) {
+            return true;
+        }
+
+        m_ops.m_state.flags.bIsWaiting = 0U;
+
+        if ((1U == m_ops.m_state.transition_flags.bConsumeFlags)
+            && (m_ops.m_state.current_state != CTransientState)) {
+            consume_flags();
+        }
+
+        state_t next_state{m_ops.fsm_state()};
+
+        if constexpr (CImplSupportsTransientStates) {
+            if (next_state == CTransientState) {
+                next_state = fsm_tick_transient_state_wrapper();
+            } else {
+                next_state = m_ops.fsm_tick_state(m_ops.m_state.current_state);
+            }
+        } else {
+            next_state = m_ops.fsm_tick_state(m_ops.m_state.current_state);
+        }
+
+        //Handle reset/exit
+        if (next_state == CExitState) {
+            const auto is_not_exit = (0U == m_ops.m_state.flags.bIsForcedExit);
+            reset();
+            return is_not_exit;
+        }
+
+        //Handle state change only if the _Impl needs too
+        if constexpr (CImplHasStateChangeHandler) {
+            if (next_state != m_ops.fsm_state()) {
+                if (false == on_state_changed(m_ops.fsm_state(), next_state)) {
+                    return false;
+                }
+            }
+        }
+
+        //Update last state
+        m_ops.m_state.last_state = m_ops.m_state.current_state;
+
+        //Update current state
+        m_ops.m_state.current_state = next_state;
+
+        return true;
+    }
+
+    //! [FSM] Reset the fsm
+    constexpr void reset() noexcept
+        requires(CImplIsValid)
+    {
+        m_ops.m_state.reset(0U);
+
+        if constexpr (CImplHasResetHandler) {
+            m_ops.on_fsm_reset();
+        }
+    }
+
+    //! [FSM] Get the ops impl
+    [[nodiscard]] _Ops& self() noexcept {
+        return m_ops;
+    }
+
+    //! [FSM] Get the ops impl
+    [[nodiscard]] const _Ops& self() const noexcept {
+        return m_ops;
+    }
+
+private:
+    //! [FSM] Tick the current transient state
+    [[nodiscard]] constexpr state_t fsm_tick_transient_state_wrapper() noexcept
+        requires(CImplSupportsTransientStates)
+    {
+        const auto result = m_ops.fsm_tick_transient_state(m_ops.m_state.transient_state);
+        if (result.is_failure()) {
+            return m_ops.fsm_state();
+        }
+
+        //Cache the result
+        m_ops.m_state.transient_result = result.value();
+
+        //If transient state has fatal failure, exit fsm
+        if (m_ops.m_state.flags.bTransientStateHasFatalFailure) {
+            return m_ops.fsm_exit();
+        }
+
+        //Goto transient next state
+        return m_ops.fsm_goto(m_ops.m_state.transient_next_state);
+    }
+
+    //! [FSM] Consume transition flags
+    constexpr void consume_flags() noexcept {
+        SKL_ASSERT(1U == m_ops.m_state.transition_flags.bConsumeFlags);
+
+        if (m_ops.m_state.transition_flags.bResetStateStartTime) {
+            m_ops.m_state.start_timepoint = get_current_epoch_time();
+        }
+
+        if (m_ops.m_state.transition_flags.bResetTicksCount) {
+            m_ops.m_state.state_tick_count = 0ULL;
+        }
+
+        if (m_ops.m_state.transition_flags.bResetSubState) {
+            m_ops.m_state.sub_state = 0;
+
+            if constexpr (CImplSupportsTransientStates) {
+                m_ops.m_state.transient_sub_state = 0;
+            }
+        }
+
+        //Clear the transition flags
+        m_ops.m_state.transition_flags.flags = 0U;
+    }
+
+private:
+    _Ops m_ops;
+};
+} // namespace skl::fsm

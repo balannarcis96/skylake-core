@@ -1,0 +1,32 @@
+//!
+//! \file skl_hash
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+//! Compute a sip hash value
+//! \p f_in Pointer to a 16 byte wide source buffer
+//! \p f_key Pointer to a 16 byte wide key source buffer
+//! \p f_out Pointer to a 16 byte wide output buffer
+void skl_siphash_16(const void* f_in, const void* f_key, void* f_out) noexcept;
+
+//! Compute a sip hash value
+//! \p f_in Pointer to a 8 byte wide source buffer
+//! \p f_key Pointer to a 8 byte wide key source buffer
+//! \p f_out Pointer to a 8 byte wide output buffer
+void skl_siphash_8(const void* f_in, const void* f_key, void* f_out) noexcept;
+
+//! Compute a 4byte sip hash of a 8byte value
+//! \p f_in Pointer to a 8 byte wide source buffer
+//! \p f_key Pointer to a 8 byte wide key source buffer
+//! \p f_out Pointer to a 8 byte wide output buffer
+void skl_siphash_8_to_4(const void* f_in, const void* f_key, void* f_out_4) noexcept;
+
+//! Compute a sip hash value
+//! \p f_in Pointer to a 4 byte wide source buffer
+//! \p f_key Pointer to a 8 byte wide key source buffer
+//! \p f_out Pointer to a 4 byte wide output buffer
+void skl_siphash_4(const void* f_in, const void* f_key, void* f_out) noexcept;
+} // namespace skl

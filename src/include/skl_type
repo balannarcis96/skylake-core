@@ -1,0 +1,16 @@
+//!
+//! \file skl_type
+//!
+//! \brief Linux x86-x64 - base types
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+using TDuration          = int;
+using TTimePoint         = int;
+using TSystemTimePoint   = unsigned long;
+using TEpochTimePoint    = unsigned long;
+using TEpochTimeDuration = unsigned long;
+} // namespace skl

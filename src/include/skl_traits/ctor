@@ -1,0 +1,17 @@
+//!
+//! \file ctor
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename _T>
+consteval bool is_copy_constructible() noexcept {
+    return requires(_T t) { _T(static_cast<const _T&>(t)); };
+}
+template <typename _T>
+consteval bool is_move_constructible() noexcept {
+    return requires(_T t) { _T(static_cast<_T&&>(t)); };
+}
+} // namespace skl

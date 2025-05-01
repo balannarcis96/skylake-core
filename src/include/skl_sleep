@@ -1,0 +1,22 @@
+//!
+//! \file skl_sleep
+//!
+//! \brief sleep utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+
+namespace skl {
+//! Sleep for \p f_ms milliseconds
+void skl_sleep(u32 f_ms) noexcept;
+
+//! Sleep for \p f_ns microseconds
+void skl_usleep(u32 f_us) noexcept;
+
+//! Sleep for \p f_seconds_to_sleep seconds
+//! \remark Most precise, might spin if sleep time is very small
+void skl_precise_sleep(double f_seconds_to_sleep) noexcept;
+} // namespace skl

@@ -1,0 +1,226 @@
+//!
+//! \file SklFsm
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "SklFsm"
+#include "skl_log"
+
+/*
+ * Skylake Example FSM
+ *  Shows a simple example of a state machine implemented using SklFsm.
+ *
+ *  States:
+ *           [PULL_EVENTS] - Dequeue a burst of events from the queue
+ *                 |
+ *                \ /
+ *                 .
+ *         [PROCESS_EVENTS] - Process the sync events and sift async events into an internal list
+ *                 |
+ *                \ /
+ *                 .
+ *      [PROCESS_ASYNC_EVENTS] - Process async events from the internal list
+ * Transient states:
+ *      [START_ASYNC_PROCESSING_FOR_EVENT] 
+ *          - While processing events, a type of event requires some async processing
+ *          - This state is used to start the async process and wait for its result
+ * Exit condition:
+ * OK:
+ *   - The FSM will exit if it receives an exit event
+ * BAD:
+ *   - The FSM will exit if the dequeueing of packets fails
+ *   - The FSM will exit if the async process start fails
+ *   - The FSM will exit if the async processing timesout
+ */
+namespace skl::fsm::example {
+enum EExampleFSMStates : state_t {
+    EX_FSM_STATE_PULL_EVENTS = CCustomStatesStart,
+    EX_FSM_STATE_PROCESS_EVENTS,
+    EX_FSM_STATE_PROCESS_ASYNC_EVENTS,
+};
+
+enum EExampleFSMTransientStates : transient_state_t {
+    EX_FSM_TSTATE_DO_ASYNC_PROCESSING_FOR_EVENT,
+};
+
+struct event_t;
+struct example_queue_t;
+
+//! This example shows an fsm used to process events pulled from a queue
+//! The fsm is called on a thread and is provided a queue as input
+class example_fsm_ops final : public SklFsmOps<example_fsm> {
+public:
+    constexpr example_fsm_ops(example_queue_t* f_queue) noexcept
+        : m_queue(f_queue) { }
+
+private:
+    constexpr state_t tick_PULL_EVENTS() noexcept {
+        const auto result = m_queue->dequeue_burst((m_events + m_events_count), (array_size(m_events) - m_events_count));
+        if (result.is_failure()) {
+            return fsm_exit();
+        }
+        if (0U == result.value()) {
+            return fsm_goto(EX_FSM_STATE_PROCESS_EVENTS); //No new events to process
+        }
+
+        m_events_count += result.value();
+
+        return fsm_goto(EX_FSM_STATE_PROCESS_EVENTS);
+    }
+    constexpr state_t tick_PROCESS_EVENTS() noexcept {
+        for (u64 i = 0ULL; i < m_events_count; ++i) {
+            auto* event = m_events[i];
+            if (event->is_exit()) {
+                return fsm_exit();
+            } else if (event->is_async()) {
+                m_async_events[m_async_events_count++] = event;
+            } else {
+                event->process();
+            }
+        }
+
+        if (m_async_events_count > 0U) {
+            return fsm_goto(EX_FSM_STATE_PROCESS_ASYNC_EVENTS);
+        }
+
+        return fsm_goto(EX_FSM_STATE_PULL_EVENTS);
+    }
+    constexpr state_t tick_PROCESS_ASYNC_EVENTS() noexcept {
+        enum substate : sub_state_t {
+            SUBSTATE_PICK_EVENT,
+            SUBSTATE_PROCESS_RESULT,
+            SUBSTATE_DONE
+        };
+
+        if (fsm_is_current_sub_state(SUBSTATE_PICK_EVENT)) {
+            if (0 == m_async_events_count) {
+                return fsm_goto_substate(SUBSTATE_DONE);
+            }
+
+            m_current_event = m_async_events[--m_async_events_count];
+            return fsm_transit_to_sub_state(EX_FSM_TSTATE_DO_ASYNC_PROCESSING_FOR_EVENT, SUBSTATE_PROCESS_RESULT);
+        }
+        if (fsm_is_current_sub_state(SUBSTATE_PROCESS_RESULT)) {
+            if (fsm_get_transient_result().is_failure()) {
+                SERROR_LOCAL("example_fsm -- failed to process async event!");
+                return fsm_exit();
+            }
+
+            return fsm_goto_substate(SUBSTATE_PICK_EVENT);
+        }
+
+        //SUBSTATE_DONE
+        return fsm_goto(EX_FSM_STATE_PROCESS_EVENTS);
+    }
+
+private:
+    constexpr skl_result<skl_status> tick_transient_DO_ASYNC_PROCESSING_FOR_EVENT() noexcept {
+        enum substate : sub_state_t {
+            SUBSTATE_START,
+            SUBSTATE_WAIT_FOR_RESULT,
+            SUBSTATE_DONE
+        };
+
+        if (fsm_transient_is_substate(SUBSTATE_START)) {
+            SKL_ASSERT(nullptr != m_current_event);
+
+            if (start_event_async_process(m_current_event).is_failure()) {
+                return fsm_transient_done_fail(ERR_ASYNC_EVENT_START_FAIL);
+            }
+
+            m_async_start_timepoint = get_current_epoch_time();
+
+            return fsm_transient_goto_substate(SUBSTATE_WAIT_FOR_RESULT);
+        }
+        if (fsm_transient_is_substate(SUBSTATE_WAIT_FOR_RESULT)) {
+            const auto now = get_current_epoch_time();
+            if ((now - m_async_start_timepoint) > 5000) {
+                return fsm_transient_done_fail(ERR_ASYNC_EVENT_TIMEOUT);
+            }
+
+            const auto status = get_event_async_result(m_current_event);
+            if (status.is_failure()) {
+                return fsm_transient_done_fail(ERR_ASYNC_EVENT_FAILED);
+            }
+
+            if (status.is_custom(OK_ASYNC_EVENT_PENDING)) {
+                return fsm_transient_delay(500); //Continue after 500ms
+            }
+
+            //Maybe save the result somewhere...
+
+            return fsm_transient_goto_substate(SUBSTATE_DONE);
+        }
+
+        // SUBSTATE_DONE: Success
+        return fsm_transient_done();
+    }
+
+public:
+    //! Tick current state
+    constexpr state_t fsm_tick_state(state_t f_state) noexcept {
+        switch (EExampleFSMStates{f_state}) {
+            case EX_FSM_STATE_PULL_EVENTS:
+                return tick_PULL_EVENTS();
+            case EX_FSM_STATE_PROCESS_EVENTS:
+                return tick_PROCESS_EVENTS();
+            case EX_FSM_STATE_PROCESS_ASYNC_EVENTS:
+                return tick_PROCESS_ASYNC_EVENTS();
+            default:
+                {
+                    SERROR_LOCAL("example_fsm -- unknown state {}!", f_state);
+                    return fsm_exit();
+                }
+        }
+    }
+
+    //! Tick current transient state
+    skl_result<skl_status> fsm_tick_transient_state(transient_state_t f_state) noexcept {
+        switch (EExampleFSMTransientStates{f_state}) {
+            case EX_FSM_TSTATE_DO_ASYNC_PROCESSING_FOR_EVENT:
+                return tick_transient_DO_ASYNC_PROCESSING_FOR_EVENT();
+            default:
+                {
+                    SERROR_LOCAL("example_fsm -- unknown transient state {}!", f_state);
+                    return fsm_transient_done_fatal();
+                }
+        }
+    }
+
+    //Reset the fsm
+    constexpr void fsm_on_reset() noexcept {
+        //@TODO: free all the leftover events
+        m_events_count       = 0U;
+        m_async_events_count = 0U;
+        m_current_event      = nullptr;
+    }
+
+private:
+    example_queue_t* const m_queue;
+    event_t*               m_current_event{nullptr};
+    event_t*               m_events[32U];
+    event_t*               m_async_events[32U];
+    u64                    m_events_count          = 0U;
+    u64                    m_async_events_count    = 0U;
+    TEpochTimeDuration     m_async_start_timepoint = 0U;
+};
+using example_fsm = SklFsm<example_fsm_ops>;
+/*
+ * Example of fms usage
+ *
+ * example_fsm fsm{};
+ *
+ * ...
+ *
+ *  void my_tick() {
+ *    if(false == fsm.tick()) {
+ *       //The fsm has exited, handle and maybe reset
+ *       fsm.reset();
+ *    }
+ *  }
+ *
+ */
+
+} // namespace skl::fsm::example

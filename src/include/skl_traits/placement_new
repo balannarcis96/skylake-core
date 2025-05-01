@@ -1,0 +1,15 @@
+//!
+//! \file placement_new
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+/* 
+ *  IMPORTANT:
+ *     If anyone has any idea on how to not rely on <new>, PLEASE CONTACT ME: balannarcis096@gmail.com
+ * 
+ * Given that we have fixed the os, compiler and arch, we are paying to much to get just [new (a) Asd()]!!!
+ */
+
+#include <new>

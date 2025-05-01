@@ -1,0 +1,76 @@
+//!
+//! \file skl_guid
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_buffer_view"
+#include "skl_pair"
+
+namespace skl {
+//! Simple, 16 random bytes guid
+//! \remark Default constructs to the null-guid (16 zero bytes)
+struct GUID {
+    static constexpr byte CSize = 16U;
+    static const GUID     CNull;
+
+    //Default construct as null-guid
+    constexpr GUID() noexcept
+        : m_data{0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U} {
+    }
+
+    //! Construct with specific bytes
+    constexpr GUID(byte bytes[CSize]) noexcept
+        : m_data{bytes[0U], bytes[1U], bytes[2U], bytes[3U], bytes[4U], bytes[5U], bytes[6U], bytes[7U], bytes[8U], bytes[9U], bytes[10U], bytes[11U], bytes[12U], bytes[13U], bytes[14U], bytes[15U]} {
+    }
+
+    constexpr GUID(const GUID&) noexcept            = default;
+    constexpr GUID& operator=(const GUID&) noexcept = delete;
+    constexpr GUID(GUID&&) noexcept                 = delete;
+    constexpr GUID& operator=(GUID&&) noexcept      = delete;
+    constexpr ~GUID() noexcept                      = default;
+
+    [[nodiscard]] constexpr pair<u64, u64> raw() const noexcept {
+        return {
+            .first  = *reinterpret_cast<const u64*>(m_data),
+            .second = *reinterpret_cast<const u64*>(m_data + 8U)};
+    }
+
+    [[nodiscard]] constexpr bool operator==(const GUID& f_other) const noexcept {
+        return (*reinterpret_cast<const u64*>(m_data) == *reinterpret_cast<const u64*>(f_other.m_data))
+            && (*reinterpret_cast<const u64*>(m_data + 8U) == *reinterpret_cast<const u64*>(f_other.m_data + 8U));
+    }
+
+    [[nodiscard]] constexpr bool operator!=(const GUID& f_other) const noexcept {
+        return (*reinterpret_cast<const u64*>(m_data) != *reinterpret_cast<const u64*>(f_other.m_data))
+            || (*reinterpret_cast<const u64*>(m_data + 8U) != *reinterpret_cast<const u64*>(f_other.m_data + 8U));
+    }
+
+    [[nodiscard]] constexpr bool is_null() const noexcept {
+        return (*reinterpret_cast<const u64*>(m_data) == u64(0U))
+            && (*reinterpret_cast<const u64*>(m_data + 8U) == u64(0U));
+    }
+
+    void to_string(skl_buffer_view f_target_buffer) const noexcept;
+
+private:
+    const byte m_data[CSize];
+};
+
+//! [LibInit][ThreadLocal] Make new guid
+[[nodiscard]] GUID make_guid() noexcept;
+
+//! [LibInit][ThreadLocal] Make new guid
+//! \remark Faster, less "collision-safe"
+[[nodiscard]] GUID make_guid_fast() noexcept;
+
+//! Make new guid
+//! \remark Creates new instance of SklRand on each call
+[[nodiscard]] GUID g_make_guid() noexcept;
+
+//! Make new guid
+//! \remark Creates new instance of SklRand on each call
+//! \remark Faster, less "collision-safe"
+[[nodiscard]] GUID g_make_guid_fast() noexcept;
+} // namespace skl

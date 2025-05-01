@@ -1,0 +1,101 @@
+//!
+//! \file skl_buffer_view
+//!
+//! \brief byte buffer view
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+
+namespace skl {
+struct skl_buffer_const_view {
+    constexpr skl_buffer_const_view() noexcept
+        : length(0U)
+        , position(0U)
+        , buffer(nullptr) {
+    }
+
+    template <u64 _N>
+    constexpr skl_buffer_const_view(const byte (&f_buffer)[_N]) noexcept
+        : length(_N)
+        , position(0U)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_const_view(u64 f_length, const byte* f_buffer) noexcept
+        : length(f_length)
+        , position(0U)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_const_view(u64 f_length, u32 f_position, const byte* f_buffer) noexcept
+        : length(f_length)
+        , position(f_position)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_const_view(const skl_buffer_const_view&) noexcept            = default;
+    constexpr skl_buffer_const_view& operator=(const skl_buffer_const_view&) noexcept = default;
+    constexpr skl_buffer_const_view(skl_buffer_const_view&&) noexcept                 = default;
+    constexpr skl_buffer_const_view& operator=(skl_buffer_const_view&&) noexcept      = default;
+    constexpr ~skl_buffer_const_view() noexcept                                       = default;
+
+    [[nodiscard]] constexpr bool is_valid() const noexcept {
+        return nullptr != buffer && 0U < length;
+    }
+
+    u32         length;
+    u32         position;
+    const byte* buffer;
+};
+
+struct skl_buffer_view {
+    constexpr skl_buffer_view() noexcept
+        : length(0U)
+        , position(0U)
+        , buffer(nullptr) {
+    }
+
+    template <u64 _N>
+    constexpr skl_buffer_view(char (&f_buffer)[_N]) noexcept
+        : length(_N)
+        , position(0U)
+        , buffer(reinterpret_cast<byte*>(f_buffer)) {
+    }
+
+    template <u64 _N>
+    constexpr skl_buffer_view(byte (&f_buffer)[_N]) noexcept
+        : length(_N)
+        , position(0U)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_view(u64 f_length, byte* f_buffer) noexcept
+        : length(f_length)
+        , position(0U)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_view(u64 f_length, u32 f_position, byte* f_buffer) noexcept
+        : length(f_length)
+        , position(f_position)
+        , buffer(f_buffer) {
+    }
+
+    constexpr skl_buffer_view(const skl_buffer_view&) noexcept            = default;
+    constexpr skl_buffer_view& operator=(const skl_buffer_view&) noexcept = default;
+    constexpr skl_buffer_view(skl_buffer_view&&) noexcept                 = default;
+    constexpr skl_buffer_view& operator=(skl_buffer_view&&) noexcept      = default;
+    constexpr ~skl_buffer_view() noexcept                                 = default;
+
+    [[nodiscard]] constexpr bool is_valid() const noexcept {
+        return nullptr != buffer && 0U < length;
+    }
+
+    u32   length;
+    u32   position;
+    byte* buffer;
+};
+} // namespace skl

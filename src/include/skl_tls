@@ -1,0 +1,255 @@
+//!
+//! \file skl_tls
+//!
+//! \brief better than just thread_local
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <new>
+
+#include "skl_assert"
+#include "skl_status"
+#include "skl_string_literal"
+
+namespace skl {
+void* skl_core_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_core_free(void* f_block) noexcept;
+void  skl_core_zero_memory(void* f_block, u64 f_bytes_count) noexcept;
+
+namespace skl::skl_tls_internals {
+    template <typename _Tp>
+    struct remove_reference {
+        using type = _Tp;
+    };
+    template <typename _Tp>
+    struct remove_reference<_Tp&> {
+        using type = _Tp;
+    };
+    template <typename _Tp>
+    struct remove_reference<_Tp&&> {
+        using type = _Tp;
+    };
+    template <typename _Tp>
+    [[nodiscard]] constexpr _Tp&& forward(typename remove_reference<_Tp>::type& __t) noexcept { return static_cast<_Tp&&>(__t); }
+    template <typename _Tp>
+    [[nodiscard]] constexpr _Tp&& forward(typename remove_reference<_Tp>::type&& __t) noexcept { return static_cast<_Tp&&>(__t); }
+
+    template <typename T, typename U>
+    concept same_as = __is_same(T, U) && __is_same(U, T);
+    template <typename T>
+    constexpr bool has_tls_init = requires(T t) {
+        { t.tls_init() } -> same_as<skl_status>;
+    };
+    template <typename T>
+    constexpr bool has_tls_destroy = requires(T t) {
+        { t.tls_destroy() } -> same_as<void>;
+    };
+} // namespace skl::skl_tls_internals
+
+/*!
+ *! \brief  Thread local "singleton" instance of \p _ThreadLocalValue class type
+ *! 
+ *! \remark Better than thread_local as it manages non trivial objects through an opaque ptr so the compiler will not
+ *!         issue tls guard checks every time the object is accessed
+ *! 
+ *! \remark Small buffer optimization:
+ *!         If sizeof(_ThreadLocalValue) <= sizeof(void*) the object is created inplace inside the thread local variable itself
+ *! 
+ *! \remark If [skl_status tls_init()] is defined on the target type, it will be called on the creation of the object (on each thread)
+ *!                                    If a non success status is returned tls_create() will fail with SKL_ERR_TLS_INIT
+ *! 
+ *! \remark If [void tls_destroy()] is defined on the target type, it will be called on the destruction of the object (on each thread)
+ *! 
+ *! \note   Usage example:
+ *!             class MyThreadLocalObject{...};
+ *!             
+ *!             // Declare - In header 
+ *!             SKL_DECLARE_TLS_SINGLETON(MyThreadLocalObject, CustomName);
+ *!             
+ *!             // Define - In cpp
+ *!             SKL_DEFINE_TLS_SINGLETON(MyThreadLocalObject, CustomName);
+ *!             
+ *!             // (Or) Define and Declare
+ *!             SKL_MAKE_TLS_SINGLETON(MyThreadLocalObject, CustomName);
+ *!             
+ *!             // Usage:
+ *!             ! tls_create must be called befvor use on each thread !
+ *!                 CustomName::tls_create(...);
+ *!                 CustomName::tls()->do_smth();
+ *!                 CustomName::tls_checked().do_smth();
+ *!                 CustomName::tls_destroy();
+ *!             ! tls_destroy must be called at the end of each thread !
+ */
+template <typename _ThreadLocalValue, StringLiteral Name, bool _UseCoreAllocator = false, u64 _CoreAllocAlignment = alignof(_ThreadLocalValue)>
+class ThreadLocal {
+    static_assert(__is_class(_ThreadLocalValue), "Only supports class/struct types, for native types use thread_local!");
+    static constexpr bool bDoSmallBufferOpt = (sizeof(_ThreadLocalValue) <= sizeof(void*));
+
+public:
+    ThreadLocal()                              = delete;
+    ~ThreadLocal()                             = delete;
+    ThreadLocal(const ThreadLocal&)            = delete;
+    ThreadLocal& operator=(const ThreadLocal&) = delete;
+    ThreadLocal(ThreadLocal&&)                 = delete;
+    ThreadLocal& operator=(ThreadLocal&&)      = delete;
+
+    //! [ThreadLocal] Create the object instance for the calling thread
+    //! \remark Only valid if _StaticLifecycle = false
+    //! \remark Must call destroy() when not needed anymore
+    template <typename... _Args>
+    SKL_NOINLINE [[nodiscard]] static skl_status tls_create(_Args... f_arg) noexcept {
+        if (tls_init_status()) {
+            return SKL_OK_REDUNDANT;
+        }
+
+        if constexpr (bDoSmallBufferOpt) {
+            new (reinterpret_cast<void*>(&ThreadLocalValue)) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+        } else {
+            _ThreadLocalValue* new_object;
+            if constexpr (false == _UseCoreAllocator) {
+                new_object = new _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+                if (nullptr == new_object) {
+                    return SKL_ERR_ALLOC;
+                }
+            } else {
+                new_object = reinterpret_cast<_ThreadLocalValue*>(skl_core_alloc(sizeof(_ThreadLocalValue), _CoreAllocAlignment));
+                if (nullptr == new_object) {
+                    return SKL_ERR_ALLOC;
+                }
+                new (new_object) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+            }
+
+            SKL_ASSERT(ThreadLocalValue == 0U);
+            ThreadLocalValue = reinterpret_cast<u64>(new_object);
+        }
+
+        if constexpr (skl::skl_tls_internals::has_tls_init<_ThreadLocalValue>) {
+            const skl_status result = tls_checked().tls_init();
+            if (result.is_failure()) {
+                return SKL_ERR_TLS_INIT;
+            }
+        }
+
+#if 0
+        (void)printf("SKL CORE -- tls -- created %s instance!\n", Name.value());
+#endif
+
+        InitGuard = 1U;
+        return SKL_SUCCESS;
+    }
+
+    //! [ThreadLocal] Get the thread local instance of _ThreadLocalValue
+    //! \returns If the thread local instance was not created before this call, tls_create(); will be called
+    //! \remark The result of tls_create() is permanently asserted to be successful
+    //! \remark _ThreadLocalValue must have a valid default ctor
+    template <typename = _ThreadLocalValue>
+    [[nodiscard]] static _ThreadLocalValue& tls_guarded() noexcept {
+        if (false == tls_init_status()) [[unlikely]] {
+            //Call not inlined!
+            const auto create_result = tls_create();
+            SKL_ASSERT_PERMANENT(create_result.is_success());
+        }
+
+        if constexpr (bDoSmallBufferOpt) {
+            [[likely]] return *reinterpret_cast<_ThreadLocalValue*>(&ThreadLocalValue);
+        } else {
+            [[likely]] return *reinterpret_cast<_ThreadLocalValue*>(ThreadLocalValue);
+        }
+    }
+
+    //! [ThreadLocal] Get the thread local instance of _ThreadLocalValue
+    //! \remarks Asserts that the instance is not nullptr (tls_create() called on the calling thread)
+    [[nodiscard]] static _ThreadLocalValue& tls_checked() noexcept {
+        SKL_ASSERT(tls_init_status());
+        return *tls();
+    }
+
+    //! [ThreadLocal] Destroy the object instance for the calling thread
+    //! \remark Only valid if _StaticLifecycle = false
+    SKL_NOINLINE static void tls_destroy() noexcept {
+        if (false == tls_init_status()) {
+            return;
+        }
+
+        if constexpr (skl::skl_tls_internals::has_tls_destroy<_ThreadLocalValue>) {
+            tls_checked().tls_destroy();
+        }
+
+        if constexpr (false == bDoSmallBufferOpt) {
+            if constexpr (false == _UseCoreAllocator) {
+                //Free memory block
+                delete tls();
+            } else {
+                //Explicitly call the destructor
+                tls_checked().~_ThreadLocalValue();
+
+                //Free block
+                skl_core_free(tls());
+            }
+        } else {
+            //Explicitly call the destructor
+            tls_checked().~_ThreadLocalValue();
+        }
+
+#if 0
+        (void)printf("SKL CORE -- tls -- destroied %s instance!\n", Name.value());
+#endif
+
+        //Clear
+        ThreadLocalValue = 0U;
+        InitGuard        = 0U;
+    }
+
+    //! [ThreadLocal] Destroy the object instance for the calling thread
+    //! Has a successfull call to tls_create() been made for this instance?
+    //! \returns true of the tls instance has beed created via tls_create()
+    [[nodiscard]] static bool tls_init_status() noexcept {
+        return 0U != InitGuard;
+    }
+
+private:
+    //! [ThreadLocal] Get the thread local instance of _ThreadLocalValue
+    //! \returns nullptr if a successfully call to tls_create(...) was performed upfront
+    [[nodiscard]] static _ThreadLocalValue* tls() noexcept {
+        if constexpr (bDoSmallBufferOpt) {
+            return reinterpret_cast<_ThreadLocalValue*>(&ThreadLocalValue);
+        } else {
+            return reinterpret_cast<_ThreadLocalValue*>(ThreadLocalValue);
+        }
+    }
+
+private:
+    static thread_local u64  ThreadLocalValue; //!< The actual thread local value
+    static thread_local byte InitGuard;        //!< Init guard flag
+};
+} // namespace skl
+
+#define SKL_DECLARE_TLS_SINGLETON(SingletonTypeName, Name) \
+    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::StringLiteral(#Name)>;
+
+//Use this macro to define the tls singleton
+#define SKL_DEFINE_TLS_SINGLETON(SingletonTypeName, Name)                                                  \
+    template <>                                                                                            \
+    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name)>::ThreadLocalValue{0U}; \
+    template <>                                                                                            \
+    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name)>::InitGuard{0U};
+
+#define SKL_DECLARE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment) \
+    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::StringLiteral(#Name), true, Alignment>;
+
+//Use this macro to define the tls singleton
+#define SKL_DEFINE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment)                                                   \
+    template <>                                                                                                             \
+    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name), true, Alignment>::ThreadLocalValue{0U}; \
+    template <>                                                                                                             \
+    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name), true, Alignment>::InitGuard{0U};
+
+#define SKL_MAKE_TLS_SINGLETON(SingletonTypeName, Name) \
+    SKL_DECLARE_TLS_SINGLETON(SingletonTypeName, Name)  \
+    SKL_DEFINE_TLS_SINGLETON(SingletonTypeName, Name)
+
+#define SKL_MAKE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment) \
+    SKL_DECLARE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment)  \
+    SKL_DEFINE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment)

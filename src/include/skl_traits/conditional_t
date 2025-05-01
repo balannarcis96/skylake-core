@@ -1,0 +1,21 @@
+//!
+//! \file conditional_t
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <bool _Condition, typename _TrueType, typename _FalseType>
+struct conditional_type;
+template <typename _TrueType, typename _FalseType>
+struct conditional_type<true, _TrueType, _FalseType> {
+    using type = _TrueType;
+};
+template <typename _TrueType, typename _FalseType>
+struct conditional_type<false, _TrueType, _FalseType> {
+    using type = _FalseType;
+};
+template <bool _Condition, typename _TrueType, typename _FalseType>
+using conditional_t = conditional_type<_Condition, _TrueType, _FalseType>::type;
+} // namespace sklI

@@ -1,0 +1,62 @@
+//!
+//! \file skl_spin_lock
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+struct fake_spin_lock_t {
+    void lock() noexcept { }
+    void try_lock() noexcept { }
+    void unlock() noexcept { }
+};
+
+struct spin_lock_t {
+    //! Acquire the lock
+    void lock() noexcept {
+        for (;;) {
+            // Optimistically assume the lock is free on the first try
+            if (0 == __atomic_exchange_n(&m_lock, 1, __ATOMIC_ACQ_REL)) {
+                [[likely]] return;
+            }
+
+            while (0 != __atomic_load_n(&m_lock, __ATOMIC_RELAXED)) {
+                __builtin_ia32_pause();
+            }
+        }
+    }
+
+    //! Try to acquire the lock
+    [[nodiscard]] bool try_lock() noexcept {
+        return __atomic_exchange_n(&m_lock, 1, __ATOMIC_ACQUIRE) == 0;
+    }
+
+    //! Release the lock
+    void unlock() noexcept {
+        __atomic_store_n(&m_lock, 0, __ATOMIC_RELEASE);
+    }
+
+private:
+    int m_lock{0};
+};
+
+template <typename _TLock>
+struct lock_guard_t {
+    constexpr lock_guard_t(_TLock& f_lock) noexcept
+        : m_lock(f_lock) {
+        f_lock.lock();
+    }
+    constexpr ~lock_guard_t() noexcept {
+        m_lock.unlock();
+    }
+
+    lock_guard_t(const lock_guard_t&)            = delete;
+    lock_guard_t& operator=(const lock_guard_t&) = delete;
+    lock_guard_t(lock_guard_t&&)                 = delete;
+    lock_guard_t& operator=(lock_guard_t&&)      = delete;
+
+private:
+    _TLock& m_lock;
+};
+} // namespace skl

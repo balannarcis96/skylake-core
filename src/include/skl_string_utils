@@ -1,0 +1,24 @@
+//!
+//! \file skl_string_utils
+//!
+//! \brief string utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <string>
+
+namespace skl {
+//! Left trim \p f_string of char \p f_trim_char (inplace)
+void left_trim(std::string& f_string, const char f_trim_char = ' ') noexcept;
+
+//! Left trim \p f_string of char \p f_trim_char (inplace)
+void right_trim(std::string& f_string, const char f_trim_char = ' ') noexcept;
+
+//! Trim \p f_string of char \p f_trim_char (inplace)
+inline void trim(std::string& f_string, const char f_trim_char = ' ') noexcept {
+    left_trim(f_string, f_trim_char);
+    right_trim(f_string, f_trim_char);
+}
+} // namespace skl

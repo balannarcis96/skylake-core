@@ -1,0 +1,19 @@
+//!
+//! \file skl_pair
+//!
+//! \brief trivial constexpr pair type
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename _Left, typename _Right>
+struct pair {
+    static_assert(__is_trivial(_Left));
+    static_assert(__is_trivial(_Right));
+
+    _Left  first;
+    _Right second;
+};
+} // namespace std

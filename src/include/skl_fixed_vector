@@ -1,0 +1,270 @@
+//!
+//! \file skl_fixed_vector
+//!
+//! \brief skl_fixed_vector fwd and minimal def
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+#include "skl_int"
+#include "skl_assert"
+#include "skl_traits/conditional_t"
+
+namespace skl {
+template <typename, u64, u64, bool, bool, bool>
+class iskl_fixed_vector;
+
+void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_vector_free(void* f_block) noexcept;
+void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
+void* skl_core_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_core_free(void* f_block) noexcept;
+void  skl_core_zero_memory(void* f_block, u64 f_bytes_count) noexcept;
+} // namespace skl
+
+namespace skl {
+template <typename _T,
+          u64  _FixedCapacity,
+          u64  _Alignment      = alignof(_T),
+          bool _UseHeepStorage = false,
+          bool _DeferHeepAlloc = false,
+          bool _UseCoreAlloc   = false>
+struct skl_fixed_vector_impl {
+    static_assert(_FixedCapacity > 0U, "_FixedCapacity must be grater then 0");
+
+    static constexpr bool HasHeepStorage = _UseHeepStorage;
+    static constexpr bool DeferHeepAlloc = _DeferHeepAlloc;
+    static constexpr bool UseCoreAlloc   = _UseCoreAlloc;
+    static constexpr u64  Capacity       = _FixedCapacity;
+    static constexpr u64  Alignment      = _Alignment;
+    static constexpr u64  ByteSize       = sizeof(_T) * Capacity;
+    using type                           = _T;
+    using size_t                         = u64;
+    using storage_t                      = conditional_t<_UseHeepStorage, byte*, byte[ByteSize]>;
+    using atrp_interface_t               = iskl_fixed_vector<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, UseCoreAlloc>;
+
+    static constexpr bool IsTypeNoThrowDestructible = noexcept(static_cast<_T*>(nullptr)->~_T());
+
+    constexpr skl_fixed_vector_impl() noexcept {
+        if constexpr (_UseHeepStorage && (false == _DeferHeepAlloc)) {
+            if constexpr (UseCoreAlloc) {
+                m_storage = reinterpret_cast<byte*>(skl_core_alloc(ByteSize, Alignment));
+            } else {
+                m_storage = reinterpret_cast<byte*>(skl_vector_alloc(ByteSize, Alignment));
+            }
+            SKL_ASSERT_CRITICAL(nullptr != m_storage);
+        } else if constexpr (_UseHeepStorage) {
+            m_storage = nullptr;
+        }
+
+        m_start  = reinterpret_cast<_T*>(m_storage);
+        m_finish = m_start;
+    }
+    constexpr ~skl_fixed_vector_impl() noexcept {
+        clear();
+
+        if constexpr (_UseHeepStorage) {
+            if (nullptr != m_storage) {
+                if constexpr (UseCoreAlloc) {
+                    skl_core_free(m_storage);
+                } else {
+                    skl_vector_free(m_storage);
+                }
+            }
+        }
+    }
+
+    constexpr skl_fixed_vector_impl(const skl_fixed_vector_impl& f_other) noexcept {
+        copy<true>(f_other);
+    }
+    constexpr skl_fixed_vector_impl& operator=(const skl_fixed_vector_impl& f_other) noexcept {
+        SKL_ASSERT(this != &f_other);
+        copy<true>(f_other);
+        return *this;
+    }
+
+    constexpr skl_fixed_vector_impl(skl_fixed_vector_impl&&)            = delete;
+    constexpr skl_fixed_vector_impl& operator=(skl_fixed_vector_impl&&) = delete;
+
+    //! Is this vector empty
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return m_finish == m_start;
+    }
+
+    //! Get the vector capacity (in objects)
+    [[nodiscard]] constexpr u64 capacity() const noexcept {
+        return _FixedCapacity;
+    }
+
+    //! Get the vector size (in objects)
+    [[nodiscard]] constexpr u64 size() const noexcept {
+        return m_finish - m_start;
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] constexpr atrp_interface_t& upgrade() noexcept {
+        return *reinterpret_cast<atrp_interface_t*>(this);
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] constexpr const atrp_interface_t& upgrade() const noexcept {
+        return *reinterpret_cast<const atrp_interface_t*>(this);
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] constexpr _T* data() noexcept {
+        return m_start;
+    }
+
+    //! Get the internal buffer ptr
+    [[nodiscard]] constexpr const _T* data() const noexcept {
+        return m_start;
+    }
+
+    //! operator[]
+    [[nodiscard]] constexpr _T& operator[](u64 f_index) noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! operator[]
+    [[nodiscard]] constexpr const _T& operator[](u64 f_index) const noexcept {
+        SKL_ASSERT(f_index < size());
+        return data()[f_index];
+    }
+
+    //! Clear the vector, destroying all objects if needed
+    constexpr void clear() noexcept {
+        if constexpr (false == __is_trivial(_T)) {
+            destruct_objects();
+        }
+
+        m_finish = m_start;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] constexpr _T* begin() noexcept {
+        return m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] constexpr _T* end() noexcept {
+        return m_finish;
+    }
+
+    //! Begin ptr into the vector buffer
+    [[nodiscard]] constexpr const _T* begin() const noexcept {
+        return m_start;
+    }
+
+    //! End ptr into the vector buffer
+    [[nodiscard]] constexpr const _T* end() const noexcept {
+        return m_finish;
+    }
+
+    //! Move the (non trivial) objects from this vector to a different one of same capacity
+    constexpr void move_objects_to(skl_fixed_vector_impl& f_other) noexcept
+        requires(false == __is_trivial(_T))
+    {
+        const auto other_size = f_other.size();
+
+        //Preapre the target buffer
+        clear();
+
+        //Adjust the size
+        m_finish = m_start + other_size;
+
+        //Perform the move
+        for (u64 i = 0U; i < other_size; ++i) {
+            new (&m_start[i]) _T(static_cast<_T&&>(f_other.m_start[i]));
+        }
+    }
+
+    //! Call to do the defered heap allocation
+    //! \remark Asserts that the allocation is OK
+    //! \remark If buffer is already valid, does nothing
+    //! \remark Call this only if _UseHeepStorage = true and _DefereHeepAlloc = true
+    //! \remark Call this before using any other api of this class
+    template <bool _ZeroMemory = true>
+    constexpr void do_heep_alloc() noexcept
+        requires(_UseHeepStorage && _DeferHeepAlloc)
+    {
+        if (nullptr == m_storage) {
+            if constexpr (UseCoreAlloc) {
+                m_storage = reinterpret_cast<byte*>(skl_core_alloc(ByteSize, Alignment));
+            } else {
+                m_storage = reinterpret_cast<byte*>(skl_vector_alloc(ByteSize, Alignment));
+            }
+            SKL_ASSERT_CRITICAL(nullptr != m_storage);
+
+            if constexpr (_ZeroMemory) {
+                skl_core_zero_memory(m_storage, ByteSize);
+            }
+
+            m_start  = reinterpret_cast<_T*>(m_storage);
+            m_finish = m_start;
+        }
+    }
+
+    //! Zero the entire memory block of this vector
+    //! \remark Requires T to be a trivial type
+    constexpr void zero() noexcept
+        requires(__is_trivial(_T))
+    {
+        skl_core_zero_memory(m_storage, ByteSize);
+    }
+
+    //! Zero size() bytes from the memory block of this vector
+    //! \remark Requires T to be a trivial type
+    constexpr void zero_size() noexcept
+        requires(__is_trivial(_T))
+    {
+        skl_core_zero_memory(m_start, size());
+    }
+
+protected:
+    template <bool _IsForCtor>
+    constexpr void copy(const skl_fixed_vector_impl& f_other) noexcept {
+        const auto other_size = f_other.size();
+
+        //Preapre the target buffer
+        if constexpr (false == _IsForCtor) {
+            clear();
+        }
+
+        //Adjust the size
+        m_finish = m_start + other_size;
+
+        //Perform the copy
+        if constexpr (__is_trivial(_T)) {
+            skl_vector_memcpy(data(), f_other.data(), sizeof(_T) * other_size);
+        } else {
+            for (u64 i = 0U; i < other_size; ++i) {
+                new (&m_start[i]) _T(f_other.m_start[i]);
+            }
+        }
+    }
+
+    template <typename = _T>
+    constexpr void destruct_objects() noexcept
+        requires((false == __is_trivial(_T)) && IsTypeNoThrowDestructible)
+    {
+        for (u64 i = 0U; i < size(); ++i) {
+            m_start[i].~_T();
+        }
+    }
+
+protected:
+    _T*       m_start  = nullptr;
+    _T*       m_finish = nullptr;
+    storage_t m_storage;
+
+    friend iskl_fixed_vector<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+};
+
+template <typename _T, u64 _FixedCapacity, u64 _Alignment = alignof(_T)>
+using skl_fixed_vector = skl_fixed_vector_impl<_T, _FixedCapacity, _Alignment, false>;
+
+template <typename _T, u64 _FixedCapacity, u64 _Alignment = alignof(_T), bool _DeferHeepAlloc = false, bool _UseCoreAlloc = false>
+using skl_fixed_heap_vector = skl_fixed_vector_impl<_T, _FixedCapacity, _Alignment, true, _DeferHeepAlloc, _UseCoreAlloc>;
+} // namespace skl

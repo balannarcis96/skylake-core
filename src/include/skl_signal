@@ -1,0 +1,31 @@
+//!
+//! \file skl_signal
+//!
+//! \brief os signal handler
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <functional>
+
+#include "skl_status"
+
+namespace skl {
+using TEpilogHandler = std::function<void(int)>;
+
+//! Init the program epilog handlers
+[[nodiscard]] skl_status init_program_epilog() noexcept;
+
+//! Register handler to be called at the end of the program termination
+//! \remark Handler must be signal safe (no locking, no syscalls etc)
+[[nodiscard]] skl_status register_epilog_handler(TEpilogHandler&& f_handler) noexcept;
+
+//! Register handler to be called at program abnormal termination (SIGABRT,SIGFPE,SIGILL,SIGSEGV)
+//! \remark Handler must be signal safe (no locking, no syscalls etc)
+[[nodiscard]] skl_status register_epilog_abnormal_handler(TEpilogHandler&& f_handler) noexcept;
+
+//! Register handler to be called at program exit request (CTRL+C or  SIGTERM)
+//! \remark Handler must be signal safe (no locking, no syscalls etc)
+[[nodiscard]] skl_status register_epilog_termination_handler(TEpilogHandler&& f_handler) noexcept;
+} // namespace skl
