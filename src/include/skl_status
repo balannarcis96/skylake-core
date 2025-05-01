@@ -1,0 +1,109 @@
+//!
+//! \file skl_status
+//!
+//! \brief result type
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+//! Base type of the result
+using skl_status_raw = int;
+
+//All custom error statuses must be up to this value (including) [INT_MIN, -1000]!
+constexpr skl_status_raw SKL_CUSTOM_ERR_MAX = -10000;
+
+//All core statuses
+enum skl_core_statuses : skl_status_raw {
+    //Error statuses
+    SKL_ERR_OVERFLOW   = -31,
+    SKL_ERR_NOT_IMPL   = -30,
+    SKL_ERR_RX         = -29,
+    SKL_ERR_TX         = -28,
+    SKL_ERR_END        = -27,
+    SKL_ERR_PORT       = -26,
+    SKL_ERR_TIMEOUT    = -25,
+    SKL_ERR_THREAD     = -24,
+    SKL_ERR_NOT_UNIQUE = -23,
+    SKL_ERR_DEVICE     = -22,
+    SKL_ERR_NOT_FOUND  = -21,
+    SKL_ERR_DEPENDENCY = -20,
+    SKL_ERR_RESOURCE   = -19,
+    SKL_ERR_ABORT      = -18,
+    SKL_ERR_PARAMS     = -17,
+    SKL_ERR_STATE      = -16,
+    SKL_ERR_OP_ORDER   = -15,
+    SKL_ERR_REPEAT     = -14,
+    SKL_ERR_INIT_ID    = -13,
+    SKL_ERR_INIT_RAND  = -12,
+    SKL_ERR_INIT_LOG   = -11,
+    SKL_ERR_TLS_INIT   = -10,
+    SKL_ERR_INIT       = -9,
+    SKL_ERR_ALLOC      = -8,
+    SKL_ERR_SIZE       = -7,
+    SKL_ERR_EMPTY      = -6,
+    SKL_ERR_TRUN       = -5,
+    SKL_ERR_WRITE      = -4,
+    SKL_ERR_READ       = -3,
+    SKL_ERR_FILE       = -2,
+
+    //General fail status
+    SKL_ERR_FAIL = -1,
+
+    //General success staus
+    SKL_SUCCESS = 0,
+
+    //Success statuses
+    SKL_OK_REPEAT    = 1,
+    SKL_OK_REDUNDANT = 2,
+};
+
+//All custom success statuses must start from this value (including)!
+constexpr skl_status_raw SKL_CUSTOM_SUCCESS_MIN = 10000;
+
+struct skl_status {
+    constexpr skl_status(skl_status_raw value) noexcept
+        : m_status(value) { }
+
+    constexpr skl_status(const skl_status&) noexcept            = default;
+    constexpr skl_status(skl_status&&) noexcept                 = default;
+    constexpr skl_status& operator=(const skl_status&) noexcept = default;
+    constexpr skl_status& operator=(skl_status&&) noexcept      = default;
+    constexpr ~skl_status()                                     = default;
+
+    [[nodiscard]] constexpr skl_status_raw    raw() const noexcept { return m_status; }
+    [[nodiscard]] constexpr bool              is_success() const noexcept { return m_status >= 0; }
+    [[nodiscard]] constexpr bool              is_failure() const noexcept { return m_status < 0; }
+    [[nodiscard]] static constexpr skl_status success() noexcept { return SKL_SUCCESS; }
+    [[nodiscard]] static constexpr skl_status fail() noexcept { return SKL_ERR_FAIL; }
+    [[nodiscard]] static constexpr skl_status from_bool(bool f_value) noexcept { return f_value ? SKL_SUCCESS : SKL_ERR_FAIL; }
+    [[nodiscard]] constexpr bool              operator==(const skl_core_statuses f_status) const noexcept { return m_status == static_cast<skl_status_raw>(f_status); }
+    [[nodiscard]] constexpr bool              operator!=(const skl_core_statuses f_status) const noexcept { return m_status != static_cast<skl_status_raw>(f_status); }
+    [[nodiscard]] constexpr bool              operator==(const skl_status& f_other) const noexcept { return m_status == f_other.m_status; }
+    [[nodiscard]] constexpr bool              operator!=(const skl_status& f_other) const noexcept { return !(*this == f_other); }
+    [[nodiscard]] constexpr bool              is_custom() const noexcept { return (m_status >= SKL_CUSTOM_SUCCESS_MIN) || (m_status <= SKL_CUSTOM_ERR_MAX); }
+
+    [[nodiscard]] constexpr bool is_failure(skl_status f_specific_fail_status) const noexcept {
+        return is_failure() && (m_status == f_specific_fail_status.m_status);
+    }
+    [[nodiscard]] constexpr bool is_success(skl_status f_specific_success_status) const noexcept {
+        return is_success() && (m_status == f_specific_success_status.m_status);
+    }
+
+    template <typename _Enum>
+    [[nodiscard]] constexpr _Enum raw_as_enum() const noexcept
+        requires(__is_enum(_Enum))
+    {
+        return static_cast<_Enum>(m_status);
+    }
+
+private:
+    skl_status_raw m_status;
+};
+
+[[nodiscard]] constexpr bool operator==(const skl_core_statuses f_left, const skl_status f_status) noexcept {
+    return static_cast<skl_status_raw>(f_left) == f_status.raw();
+}
+[[nodiscard]] constexpr bool operator!=(const skl_core_statuses f_left, const skl_status f_status) noexcept {
+    return static_cast<skl_status_raw>(f_left) != f_status.raw();
+}

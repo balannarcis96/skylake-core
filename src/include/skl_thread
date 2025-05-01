@@ -1,0 +1,117 @@
+//!
+//! \file skl_thread
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <functional>
+#include <memory>
+#include <latch>
+
+#include "skl_int"
+#include "skl_status"
+#include "skl_atomic"
+#include "skl_pair"
+#include "skl_assert"
+#include "skl_string_view"
+
+namespace skl {
+using SKLThreadAffinity                     = pair<i16, i16>;
+using ThreadHandle                          = u64;
+constexpr ThreadHandle CInvalidThreadHandle = 0U;
+
+//! Thread abstraction
+//!
+//! ! NOTE ! All the code executed as part of the
+//!          thread handler can safely use any skl core lib apis.
+//!          The thread handler will init and deinit the core lib internaly.
+//!
+class SKLThread {
+public:
+    using TExecutionHandler = std::function<i32(void)>;
+
+    SKLThread() noexcept = default;
+
+    explicit SKLThread(skl_string_view f_name) noexcept
+        : m_name{0} {
+        f_name.copy(m_name);
+    }
+
+    SKLThread(const SKLThread&)            = delete;
+    SKLThread& operator=(const SKLThread&) = delete;
+    SKLThread& operator=(SKLThread&&)      = delete;
+
+    //Can only move construct
+    SKLThread(SKLThread&& f_other) noexcept
+        : m_handler(std::move(f_other.m_handler))
+        , m_handle(f_other.m_handle.load())
+        , m_result_value(f_other.m_result_value.load())
+        , m_name(0) {
+        f_other.name().copy(m_name);
+        f_other.m_name[0U] = 0;
+        (void)f_other.m_handle.exchange(CInvalidThreadHandle);
+    }
+
+    ~SKLThread() noexcept;
+
+    //! Create this thread
+    //! \param CPUIndexRange 0 based index of cores this thread is to be scheduled on(globally indexed)
+    //! \note CPUIndexRange - (-1, -1) = any core/no affinity - default
+    //! \note CPUIndexRange - (x, x) = same index in range to force scheduling on a spcific core
+    [[nodiscard]] skl_status create(SKLThreadAffinity f_cpu_index_range = {-1, -1}) noexcept;
+
+    //! Join this thread
+    [[nodiscard]] skl_status join() noexcept;
+
+    //! Get the thread name
+    [[nodiscard]] skl_string_view name() const noexcept {
+        return skl_string_view{m_name, std::size(m_name)};
+    }
+
+    //! Detach this thread
+    //! \note Cannot be joined after this call
+    skl_status detach() noexcept;
+
+    //! Can this thread be joined
+    [[nodiscard]] bool joinable() const noexcept {
+        return m_bIsJoinable;
+    }
+
+    //! Get the native handle of this thread
+    [[nodiscard]] ThreadHandle handle() const noexcept {
+        return m_handle;
+    }
+
+    //! Set the execution handler functor
+    //! \note i32(SKL_CDECL*)(void) noexcept
+    template <typename TFunctor>
+    void set_handler(TFunctor&& f_functor) noexcept {
+        m_handler = std::forward<TFunctor>(f_functor);
+    }
+
+    //! Get the execution result
+    //! \note Make sure that the thread finished execution (joined)
+    [[nodiscard]] i32 result() const noexcept {
+        return m_result_value.load();
+    }
+
+private:
+    //! [Internal] Call the execution handler functor
+    [[nodiscard]] i32 call_handler() noexcept {
+        SKL_ASSERT(nullptr != m_handler);
+        return m_handler();
+    }
+
+private:
+    TExecutionHandler                  m_handler;                      //!< Functor called by the spawned thread
+    std::relaxed_value<ThreadHandle>   m_handle{CInvalidThreadHandle}; //!< Thread native handle
+    std::relaxed_value<skl_status_raw> m_result_value{SKL_SUCCESS};    //!< Result value after execution ended
+    std::unique_ptr<std::latch>        m_start_sync{nullptr};          //!< Start sync latch
+    std::relaxed_value<bool>           m_bRun{false};                  //!< Internal run flag
+    std::relaxed_value<bool>           m_bIsJoinable{true};            //!< Is this thread joinable
+    char                               m_name[128U]{"SKLThread"};      //!< Name of the thread
+
+    friend void* thread_run_proxy(void*) noexcept;
+};
+} // namespace skl

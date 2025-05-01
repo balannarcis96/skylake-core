@@ -1,0 +1,80 @@
+//!
+//! \file skl_socket
+//!
+//! \brief socket utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_ip"
+
+namespace skl {
+//! OS socket handle
+using socket_t = i32;
+
+//! Network l4 endpoint
+struct net_endpoint_t {
+    ipv4_addr_t ipv4_addr;
+    net_port_t  port;
+};
+} // namespace skl
+
+namespace skl {
+constexpr socket_t CInvalidSocket = -1;
+
+//! Allocate new ipv4 tcp socket ( returns CInvalidSocket on failure )
+[[nodiscard]] socket_t alloc_ipv4_tcp_socket() noexcept;
+
+//! Allocate new ipv4 udp socket ( returns CInvalidSocket on failure )
+[[nodiscard]] socket_t alloc_ipv4_udp_socket() noexcept;
+
+//! Set the blocking mode of the socket
+[[nodiscard]] bool set_sock_blocking(socket_t f_socket, bool f_blocking) noexcept;
+
+//! Set the broadcast flag of the udp socket
+[[nodiscard]] bool set_udp_sock_broadcast(socket_t f_udp_socket, bool f_enable) noexcept;
+
+//! Band the given valid \p f_socket to \p f_addr and \p f_port
+[[nodiscard]] bool bind_socket(socket_t f_socket, ipv4_addr_t f_addr, net_port_t f_port) noexcept;
+
+//! [Net] Perform a TCP connect on socket to address and port
+[[nodiscard]] bool tcp_connect(socket_t f_tcp_socket, ipv4_addr_t f_addr, net_port_t f_port) noexcept;
+
+//! Close socket
+[[nodiscard]] bool close_socket(socket_t f_socket) noexcept;
+
+//! [Net] Shutdown socket
+[[nodiscard]] bool shutdown_socket(socket_t f_socket) noexcept;
+
+//! [Net] Do a UDP send
+[[nodiscard]] i32 udp_send(socket_t f_udp_socket, const byte* f_buffer, u16 f_send_bytes, ipv4_addr_t f_addr, net_port_t f_port) noexcept;
+
+//! [Net] Do a UDP recvfrom
+[[nodiscard]] i32 udp_recv(socket_t f_udp_socket, byte* f_buffer, u16 f_max_bytes, ipv4_addr_t& f_out_addr, net_port_t& f_out_port) noexcept;
+
+//! [Util] Convert ip v4 address string to binary
+//! \remark The resulted ipv4 u32 is in host form (little endian)
+[[nodiscard]] ipv4_addr_t ipv4_addr_from_str(const char* f_cstring) noexcept;
+
+//! [ThreadLocal] Get last OS network operation related error code
+[[nodiscard]] i32 get_last_network_err() noexcept;
+
+//! [Util] Is socket valid
+[[nodiscard]] constexpr bool is_socket_valid(socket_t f_socket) noexcept {
+    return (CInvalidSocket != f_socket)
+        && (0 != f_socket);
+}
+
+//! [Util] Convert the given little endian u16 to big endian (net format)
+[[nodiscard]] u16 le_to_be_u16(u16 f_le) noexcept;
+
+//! [Util] Convert the given little endian u32 to big endian (net format)
+[[nodiscard]] u32 le_to_be_u32(u32 f_le) noexcept;
+
+//! [Util] Convert the given big endian (net format) u16 to little endian (host format)
+[[nodiscard]] u16 be_to_le_u16(u16 f_be) noexcept;
+
+//! [Util] Convert the given big endian (net format) u32 to little endian (host format)
+[[nodiscard]] u32 be_to_le_u32(u32 f_be) noexcept;
+} // namespace skl

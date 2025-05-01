@@ -1,0 +1,84 @@
+{
+    "version": "1",
+    "priority": "0",
+    "presets": [
+        {
+            "name": "default",
+            "config": [
+                {
+                    "target_name": "libskl-core",
+                    "constexpr_namespace": "skl",
+                    "default_output": "public",
+                    "constexprs": {
+                        "CCurrentCppVersion": {
+                            "value": "@CMAKE_CXX_STANDARD@",
+                            "type": "u32"
+                        },
+                        "Squirrel1_NOISE1": {
+                            "value": "0x68E31DA4U",
+                            "type": "u32"
+                        },
+                        "Squirrel1_NOISE2": {
+                            "value": "0xB5297A4DU",
+                            "type": "u32"
+                        },
+                        "Squirrel1_NOISE3": {
+                            "value": "0x1B56C4E9U",
+                            "type": "u32"
+                        },
+                        "Squirrel3_2D_PRIME": {
+                            "value": "1913646613U",
+                            "type": "u32"
+                        },
+                        "Squirrel3_3D_PRIME1": {
+                            "value": "1206686359U",
+                            "type": "u32"
+                        },
+                        "Squirrel3_3D_PRIME2": {
+                            "value": "1589711413U",
+                            "type": "u32"
+                        },
+                        "CSerializedLoggerThreadBufferSize": {
+                            "value": "4096U",
+                            "type": "u64",
+                            "desc": "Size of the serialized logger front end buffer. [min=4096]"
+                        }
+                    },
+                    "constexprs.reporting": {
+                        "CSklReportingThreadBufferSize": {
+                            "value": "1048576ULL",
+                            "type": "u64",
+                            "desc": "[Tune] Skylake Core stats reporting thread buffer (must be a power of 2)"
+                        }
+                    },
+                    "defines": {
+                        "SKL_ASSERT_LEVEL": {
+                            "value": "2",
+                            "desc": "Current skylake assert level: 0=NO ASSERTS(Release) 1=CRITICAL ASSERTS(Test) 2=ALL ASSERTS(Dev)"
+                        },
+                        "SKL_ASSERT_LEVEL_NONE": {
+                            "value": "0",
+                            "desc": "Skylake assert level: 0=NO ASSERTS(Release)"
+                        },
+                        "SKL_ASSERT_LEVEL_CRITICAL": {
+                            "value": "1",
+                            "desc": "Skylake assert level: 1=CRITICAL ASSERTS(Test)"
+                        },
+                        "SKL_ASSERT_LEVEL_ALL": {
+                            "value": "2",
+                            "desc": "Skylake assert level:2=ALL ASSERTS(Dev)"
+                        },
+                        "SKL_CORE_EXTERNAL_ALLOC": {
+                            "value": "1",
+                            "desc": "Memory allocations for data structures should be defined externally (eg. using rte_malloc for hugepages)"
+                        },
+                        "SKL_ENABLE_LOG_COLORS": {
+                            "value": "1",
+                            "desc": "Enable SLogger ansi collored output"
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

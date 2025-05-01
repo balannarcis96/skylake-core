@@ -1,0 +1,41 @@
+//!
+//! \file skl_report
+//!
+//! \brief stats report utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_stream"
+
+/*
+ *    Usage example:
+ *        struct my_report_data_1: skl_report_data_base_t {
+ *            ...
+ *        };
+ *        struct my_report_data_2: skl_report_data_base_t {
+ *            ...
+ *        };
+ *        ...
+ *        my_report_data_1 g_report_data_1;
+ *        my_report_data_2 g_report_data_2;
+ *        ...
+ *
+ *        auto& report_stream = skl_report_begin();
+ *
+ *        //Write the report data here
+ *        report_stream.write(reinterpret_cast<const byte*>(&g_report_data_1), sizeof(g_report_data_1));
+ *        report_stream.write(reinterpret_cast<const byte*>(&g_report_data_2), sizeof(g_report_data_2));
+ *
+ *        skl_report_submit();
+ */
+
+namespace skl {
+//! [ThreadLocal] Begin reporting, lock the reporting buffer and prepare it for writing
+//! \remark Important: Call skl_report_submit() when done writing to unlock the buffer
+[[nodiscard]] skl_stream& skl_report_begin() noexcept;
+
+//! [ThreadLocal] End reporting, unlock the reporting buffer
+void skl_report_submit() noexcept;
+} // namespace skl

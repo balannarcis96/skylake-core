@@ -1,0 +1,27 @@
+//!
+//! \file skl_triple
+//!
+//! \brief trivial constexpr triple type
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename TLeft, typename TMiddle, typename TRight>
+struct trivial_triple {
+    static_assert(__is_trivial(TLeft));
+    static_assert(__is_trivial(TMiddle));
+    static_assert(__is_trivial(TRight));
+
+    TLeft   first;
+    TMiddle second;
+    TRight  third;
+};
+template <typename TLeft, typename TMiddle, typename TRight>
+struct triple {
+    TLeft   first;
+    TMiddle second;
+    TRight  third;
+};
+} // namespace skl

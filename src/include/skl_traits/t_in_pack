@@ -1,0 +1,28 @@
+//!
+//! \file t_in_pack
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename _TargetType, typename... _Pack>
+struct t_in_pack {
+    template <typename _CurrentType, typename... _InnerPack>
+    static consteval bool do_search() noexcept {
+        if constexpr (__is_same(_CurrentType, _TargetType)) {
+            return true;
+        } else if constexpr (0U < sizeof...(_InnerPack)) {
+            return do_search<_InnerPack...>();
+        } else {
+            return false;
+        }
+    }
+
+    static constexpr bool value = do_search<_Pack...>();
+};
+
+template <typename _TargetType, typename... _Pack>
+constexpr bool t_in_pack_v = t_in_pack<_TargetType, _Pack...>::value;
+
+} // namespace skl

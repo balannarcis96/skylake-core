@@ -1,0 +1,36 @@
+//!
+//! \file skl_core
+//!
+//! \brief skl core lib init
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <skl_status>
+
+namespace skl {
+//! [ThreadSafe] Call this to initialize the skl core library
+//! \remark Performs library initialization
+//! \remark Call this once at the begining of your program on the main thread
+//! \remark Can be called multiple times. Returns SKL_OK_REDUNDANT if already init.
+[[nodiscard]] skl_status skl_core_init() noexcept;
+
+//! [ThreadLocal] Call this first thing on each thread that uses the skl core library
+//! \remark Performs thread specific initialization
+//! \remark No need to call this on the main thread(the thread that called skl_core_init())
+//! \remark Can be called multiple times. Returns SKL_OK_REDUNDANT if already init.
+[[nodiscard]] skl_status skl_core_init_thread() noexcept;
+
+//! [ThreadLocal] Call this first thing on each thread that uses the skl core library
+//! \remark Performs thread specific cleanup
+//! \remark No need to call this on the main thread(the thread that called skl_core_deinit())
+//! \remark Can be called multiple times. Returns SKL_OK_REDUNDANT if already deinit.
+[[nodiscard]] skl_status skl_core_deinit_thread() noexcept;
+
+//! [ThreadSafe] Call this to de-initialize the skl core library
+//! \remark Performs library cleanup
+//! \remark Call this once at the end of your program on the main thread
+//! \remark Can be called multiple times. Returns SKL_OK_REDUNDANT if already init.
+[[nodiscard]] skl_status skl_core_deinit() noexcept;
+} // namespace skl

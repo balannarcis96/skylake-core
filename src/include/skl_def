@@ -1,0 +1,216 @@
+//!
+//! \file skl_def
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_assert"
+
+#ifndef SKL_CONCATENATE
+#    define SKL_CONCATENATE_DETAIL(x, y) x##y
+#    define SKL_CONCATENATE(x, y)        SKL_CONCATENATE_DETAIL(x, y)
+#endif
+
+#ifndef SKL_FORCEINLINE
+#    define SKL_FORCEINLINE [[clang::always_inline]]
+#endif
+
+#ifndef SKL_NOINLINE
+#    define SKL_NOINLINE [[clang::noinline]]
+#endif
+
+#ifndef SKL_REAL_VALUE
+#    if SKL_REAL_TYPE_DOUBLE
+#        define SKL_REAL_VALUE(x) (x)
+#    else
+#        define SKL_REAL_VALUE(x) (x##f)
+#    endif
+#endif
+
+#ifndef SKL_DEFAULT_DTRO_COPY_AND_MOVE
+#    define SKL_DEFAULT_DTRO_COPY_AND_MOVE(ClassName)              \
+        ~ClassName() noexcept                           = default; \
+        ClassName(const ClassName&) noexcept            = default; \
+        ClassName& operator=(const ClassName&) noexcept = default; \
+        ClassName(ClassName&&) noexcept                 = default; \
+        ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_DEFAULT_COPY
+#    define SKL_DEFAULT_COPY(ClassName)                            \
+        ClassName(const ClassName&) noexcept            = default; \
+        ClassName& operator=(const ClassName&) noexcept = default;
+#endif
+
+#ifndef SKL_DEFAULT_COPY_AND_MOVE
+#    define SKL_DEFAULT_COPY_AND_MOVE(ClassName)                   \
+        ClassName(const ClassName&) noexcept            = default; \
+        ClassName& operator=(const ClassName&) noexcept = default; \
+        ClassName(ClassName&&) noexcept                 = default; \
+        ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_DEFAULT_CONSTEXPR_ALL
+#    define SKL_DEFAULT_CONSTEXPR_ALL(ClassName)                             \
+        constexpr ClassName() noexcept                            = default; \
+        constexpr ~ClassName() noexcept                           = default; \
+        constexpr ClassName(const ClassName&) noexcept            = default; \
+        constexpr ClassName& operator=(const ClassName&) noexcept = default; \
+        constexpr ClassName(ClassName&&) noexcept                 = default; \
+        constexpr ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_DEFAULT_CONSTEXPR_COPY_AND_MOVE
+#    define SKL_DEFAULT_CONSTEXPR_COPY_AND_MOVE(ClassName)                   \
+        constexpr ClassName(const ClassName&) noexcept            = default; \
+        constexpr ClassName& operator=(const ClassName&) noexcept = default; \
+        constexpr ClassName(ClassName&&) noexcept                 = default; \
+        constexpr ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_DEFAULT_COPY_MOVE_DTOR
+#    define SKL_DEFAULT_COPY_MOVE_DTOR(ClassName)                  \
+        ~ClassName() noexcept                           = default; \
+        ClassName(const ClassName&) noexcept            = default; \
+        ClassName& operator=(const ClassName&) noexcept = default; \
+        ClassName(ClassName&&) noexcept                 = default; \
+        ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_DEFAULT_CONSTEXPR_COPY_MOVE_DTOR
+#    define SKL_DEFAULT_CONSTEXPR_COPY_MOVE_DTOR(ClassName)                  \
+        constexpr ~ClassName() noexcept                           = default; \
+        constexpr ClassName(const ClassName&) noexcept            = default; \
+        constexpr ClassName& operator=(const ClassName&) noexcept = default; \
+        constexpr ClassName(ClassName&&) noexcept                 = default; \
+        constexpr ClassName& operator=(ClassName&&) noexcept      = default;
+#endif
+
+#ifndef SKL_NO_MOVE_JUST_COPY
+#    define SKL_NO_MOVE_JUST_COPY(ClassName)                  \
+        ClassName(const ClassName&)                = default; \
+        ClassName& operator=(const ClassName&)     = default; \
+        ClassName(ClassName&&) noexcept            = delete;  \
+        ClassName& operator=(ClassName&&) noexcept = delete;
+#endif
+
+#ifndef SKL_NO_COPY_JUST_MOVE
+#    define SKL_NO_COPY_JUST_MOVE(ClassName)                  \
+        ClassName(const ClassName&)                = delete;  \
+        ClassName& operator=(const ClassName&)     = delete;  \
+        ClassName(ClassName&&) noexcept            = default; \
+        ClassName& operator=(ClassName&&) noexcept = default;
+#endif
+
+#ifndef SKL_NO_COPY
+#    define SKL_NO_COPY(ClassName)                       \
+        ClassName(const ClassName&)            = delete; \
+        ClassName& operator=(const ClassName&) = delete;
+#endif
+
+#ifndef SKL_NO_MOVE_ASSIGN
+#    define SKL_NO_MOVE_ASSIGN(ClassName) \
+        ClassName& operator=(ClassName&&) = delete;
+#endif
+
+#ifndef SKL_DEFAULT_MOVE
+#    define SKL_DEFAULT_MOVE(ClassName)                       \
+        ClassName(ClassName&&) noexcept            = default; \
+        ClassName& operator=(ClassName&&) noexcept = default;
+#endif
+
+#ifndef SKL_NO_MOVE_OR_COPY
+#    define SKL_NO_MOVE_OR_COPY(ClassName)               \
+        ClassName(const ClassName&)            = delete; \
+        ClassName& operator=(const ClassName&) = delete; \
+        ClassName(ClassName&&)                 = delete; \
+        ClassName& operator=(ClassName&&)      = delete;
+#endif
+
+#ifndef SKL_NO_MOVE_OR_COPY_DEFAULT_DTOR
+#    define SKL_NO_MOVE_OR_COPY_DEFAULT_DTOR(ClassName)   \
+        ~ClassName() noexcept                  = default; \
+        ClassName(const ClassName&)            = delete;  \
+        ClassName& operator=(const ClassName&) = delete;  \
+        ClassName(ClassName&&)                 = delete;  \
+        ClassName& operator=(ClassName&&)      = delete;
+#endif
+
+#ifndef SKL_DEFAULT_STATIC_CLASS
+#    define SKL_DEFAULT_STATIC_CLASS(ClassName)           \
+        ClassName() noexcept                   = default; \
+        ~ClassName() noexcept                  = default; \
+        ClassName(const ClassName&)            = delete;  \
+        ClassName& operator=(const ClassName&) = delete;  \
+        ClassName(ClassName&&)                 = delete;  \
+        ClassName& operator=(ClassName&&)      = delete;
+#endif
+
+#ifndef SKL_TYPE_PURE_INTERFACE_CLASS
+#    define SKL_TYPE_PURE_INTERFACE_CLASS(ClassName)     \
+    public:                                              \
+        ClassName() noexcept                   = delete; \
+        ~ClassName() noexcept                  = delete; \
+        ClassName(const ClassName&)            = delete; \
+        ClassName& operator=(const ClassName&) = delete; \
+        ClassName(ClassName&&)                 = delete; \
+        ClassName& operator=(ClassName&&)      = delete;
+#endif
+
+//These classes are implementing the ATPR idiom( API through pointer/ref idiom ) Use: SKL_ATPR_CLASS or SKL_ATPR_CLASS_PRIVATE
+#ifndef SKL_ATPR_CLASS_BASE
+#    define SKL_ATPR_CLASS_BASE(ClassName, TargetType, Accessor)                              \
+    public:                                                                                   \
+        ClassName() noexcept                   = delete;                                      \
+        ~ClassName() noexcept                  = delete;                                      \
+        ClassName(const ClassName&)            = delete;                                      \
+        ClassName& operator=(const ClassName&) = delete;                                      \
+        ClassName(ClassName&&)                 = delete;                                      \
+        ClassName& operator=(ClassName&&)      = delete;                                      \
+    Accessor:                                                                                 \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static ClassName& make(TargetType& Ref) noexcept {                      \
+            return reinterpret_cast<ClassName&>(Ref);                                         \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static ClassName& make(TargetType* Ptr) noexcept {                      \
+            SKL_ASSERT(nullptr != Ptr);                                                       \
+            return *reinterpret_cast<ClassName*>(Ptr);                                        \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static const ClassName& make(const TargetType& Ref) noexcept {          \
+            return reinterpret_cast<const ClassName&>(Ref);                                   \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static const ClassName& make(const TargetType* const Ptr) noexcept {    \
+            SKL_ASSERT(nullptr != Ptr);                                                       \
+            return *reinterpret_cast<const ClassName*>(Ptr);                                  \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static ClassName* make_nullable(TargetType* Ptr) noexcept {             \
+            return reinterpret_cast<ClassName*>(Ptr);                                         \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] static const ClassName* make_nullable(const TargetType* Ptr) noexcept { \
+            return reinterpret_cast<const ClassName*>(Ptr);                                   \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] TargetType* root() noexcept {                                           \
+            return reinterpret_cast<TargetType*>(this);                                       \
+        }                                                                                     \
+        /*No cost*/                                                                           \
+        [[nodiscard]] const TargetType* root() const noexcept {                               \
+            return reinterpret_cast<const TargetType*>(this);                                 \
+        }
+#endif
+
+#ifndef SKL_ATPR_CLASS
+#    define SKL_ATPR_CLASS(ClassName, TargetType) \
+        SKL_ATPR_CLASS_BASE(ClassName, TargetType, public)
+#endif
+
+#ifndef SKL_ATPR_CLASS_PRIVATE
+#    define SKL_ATPR_CLASS_PRIVATE(ClassName, TargetType) \
+        SKL_ATPR_CLASS_BASE(ClassName, TargetType, private)
+#endif

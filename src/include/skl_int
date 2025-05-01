@@ -1,0 +1,33 @@
+//!
+//! \file skl_int
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+/*
+    WHY NOT USING THE <cstdint> HEADER?
+        To reduce compilation times as much as possible!
+    
+    ! IMPORTANT ! The expected size of the types are:
+        i8   - 1 byte
+        u8   - 1 byte
+        byte - 1 byte
+        i16  - 2 byte
+        u16  - 2 byte
+        i32  - 4 byte
+        u32  - 4 byte
+        i64  - 8 byte
+        u64  - 8 byte
+    Asserted in skl_validate.cpp
+*/
+
+using i8   = char;
+using u8   = unsigned char;
+using byte = unsigned char;
+using i16  = short;
+using u16  = unsigned short;
+using i32  = int;
+using u32  = unsigned int;
+using i64  = long;
+using u64  = unsigned long;

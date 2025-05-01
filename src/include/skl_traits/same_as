@@ -1,0 +1,11 @@
+//!
+//! \file same_as
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template<typename T, typename U>
+concept same_as = __is_same(T, U);
+} // namespace sklI

@@ -1,0 +1,11 @@
+//!
+//! \file size
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename _T, unsigned long _N>
+[[nodiscard]] constexpr unsigned long array_size(const _T (&)[_N]) noexcept { return _N; }
+} // namespace skl

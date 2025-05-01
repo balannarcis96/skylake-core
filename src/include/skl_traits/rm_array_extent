@@ -1,0 +1,26 @@
+//!
+//! \file rm_array_extent
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+template <typename T>
+struct rm_array_extent {
+    using type = T; // Non-array types remain unchanged
+};
+
+template <typename T, unsigned long N>
+struct rm_array_extent<T[N]> {
+    using type = T; // Remove fixed-size array extent
+};
+
+template <typename T>
+struct rm_array_extent<T[]> {
+    using type = T; // Remove unsized array extent
+};
+
+template <typename T>
+using rm_array_extent_t = typename rm_array_extent<T>::type;
+} // namespace skl

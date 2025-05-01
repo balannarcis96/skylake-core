@@ -1,0 +1,20 @@
+{
+    "version": "1",
+    "priority": "1",
+    "presets": [
+        {
+            "name": "dev",
+            "config": [
+                {
+                    "target_name": "libskl-core",
+                    "constexpr_namespace": "skl",
+                    "default_output": "public",
+                    "defines": {
+                        "SKL_ASSERT_LEVEL": "2",
+                        "SKL_CORE_EXTERNAL_ALLOC": "0"
+                    }
+                }
+            ]
+        }
+    ]
+}

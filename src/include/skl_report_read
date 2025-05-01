@@ -1,0 +1,48 @@
+//!
+//! \file skl_report_read
+//!
+//! \brief stats report read utils
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_stream"
+
+/*
+ *    Usage example:
+ *        const auto reports_count = skl_report_read_begin();
+ *        if (0ULL < reports_count) {
+ *
+ *            //Maybe preallocate neccesary memory here, before locking the individual buffers
+ *
+ *            for(u64 i = 0; i < reports_count; ++i) {
+ *                auto& report_stream = skl_report_read_current_begin();
+ *
+ *                // Cache the report here for latter sending
+ *
+ *                skl_report_read_current_end();
+ *            }
+ *
+ *            skl_report_read_end();
+ *        }
+ */
+
+namespace skl {
+//! [ThreadSafe] Begin report reading, lock the reporting buffer list
+//! \remark Important: Call skl_report_read_end() when done reading to unlock the buffer
+//! \remark Important: Do the report reading only if this function returns non zero
+//! \remark Important: Do the report reading [return value] ammount of times!
+[[nodiscard]] u64 skl_report_read_begin() noexcept;
+
+//! [ThreadSafe] Start reading the next report buffer (locks it)
+//! \remark Important: First call skl_report_read_begin()
+//! \remark Important: Call skl_report_read_current_end() when done reading to unlock the buffer
+[[nodiscard]] skl_stream& skl_report_read_current_begin() noexcept;
+
+//! [ThreadSafe] End reading the next report
+void skl_report_read_current_end() noexcept;
+
+//! [ThreadSafe] End report reading, unlock the reporting buffer
+void skl_report_read_end() noexcept;
+} // namespace skl

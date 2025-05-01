@@ -1,0 +1,112 @@
+//!
+//! \file skl_util
+//!
+//! \brief misc utilities
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_traits/size"
+
+namespace skl {
+template <typename _T>
+[[nodiscard]] consteval bool is_integer() noexcept {
+    return __is_same(_T, char)
+        || __is_same(_T, unsigned char)
+        || __is_same(_T, short)
+        || __is_same(_T, unsigned short)
+        || __is_same(_T, int)
+        || __is_same(_T, unsigned int)
+        || __is_same(_T, long)
+        || __is_same(_T, unsigned long)
+        || __is_same(_T, long long)
+        || __is_same(_T, unsigned long long)
+        || __is_same(_T, bool);
+}
+
+template <typename _Type>
+[[nodiscard]] constexpr _Type skl_clamp(const _Type f_value, const _Type f_min, const _Type f_max) noexcept {
+    if (f_value < f_min) {
+        return f_min;
+    } else if (f_value > f_max) {
+        return f_max;
+    } else {
+        return f_value;
+    }
+}
+template <typename _Type>
+[[nodiscard]] constexpr _Type skl_min(const _Type f_first, const _Type f_second) noexcept {
+    return f_first < f_second ? f_first : f_second;
+}
+template <typename _Type, typename... _TRest>
+[[nodiscard]] constexpr _Type skl_min_r(const _Type f_first, const _TRest... f_rest) noexcept {
+    static_assert(sizeof...(_TRest) <= 1024U, "skl_min_r recursion limit is 1024!");
+    if constexpr (0U == sizeof...(_TRest)) {
+        return f_first;
+    } else {
+        const auto result = skl_min_r(f_rest...);
+        return f_first < result ? f_first : result;
+    }
+}
+template <typename _Type>
+[[nodiscard]] constexpr _Type skl_max(const _Type f_first, const _Type f_second) noexcept {
+    return f_first > f_second ? f_first : f_second;
+}
+template <typename _Type, typename... _TRest>
+[[nodiscard]] constexpr _Type skl_max_r(const _Type f_first, const _TRest... f_rest) noexcept {
+    static_assert(sizeof...(_TRest) <= 1024U, "skl_max_r recursion limit is 1024!");
+    if constexpr (0U == sizeof...(_TRest)) {
+        return f_first;
+    } else {
+        const auto result = skl_max_r(f_rest...);
+        return f_first > result ? f_first : result;
+    }
+}
+template <typename _T>
+[[nodiscard]] bool constexpr is_power_of_2(_T f_value) noexcept {
+    static_assert(is_integer<_T>());
+    return f_value && !(f_value & (f_value - _T(1)));
+}
+template <auto _Value>
+[[nodiscard]] consteval auto next_power_of_2() noexcept
+    requires(is_integer<decltype(_Value)>() && (sizeof(decltype(_Value)) >= 4))
+{
+    using T = decltype(_Value);
+    if constexpr (_Value <= T(1)) {
+        return T(1);
+    } else {
+        if constexpr (sizeof(T) == 4) {
+            return T(1) << (T(sizeof(T) * 8U) - __builtin_clz(T(_Value - 1)));
+        } else {
+            return T(1) << (T(sizeof(T) * 8U) - __builtin_clzll(T(_Value - 1)));
+        }
+    }
+}
+template <typename T>
+[[nodiscard]] constexpr T next_power_of_2(T f_value) noexcept
+    requires(is_integer<T>() && (sizeof(T) >= 4))
+{
+    if (f_value <= T(1)) {
+        return T(1);
+    } else {
+        if constexpr (sizeof(T) == 4) {
+            return T(1) << (T(sizeof(T) * 8U) - __builtin_clz(T(f_value - 1)));
+        } else {
+            return T(1) << (T(sizeof(T) * 8U) - __builtin_clzll(T(f_value - 1)));
+        }
+    }
+}
+template <typename T>
+[[nodiscard]] constexpr T integral_ceil(T f_numerator, T f_denominator) noexcept
+    requires(is_integer<T>())
+{
+    return (f_numerator + f_denominator - T(1)) / f_denominator;
+}
+template <typename T>
+[[nodiscard]] constexpr T set_bit_value(T f_value, T f_bit_index, T f_bit_value) noexcept
+    requires(is_integer<T>())
+{
+    return (f_value & ~(T(1) << f_bit_index)) | ((f_bit_value & T(1)) << f_bit_index);
+}
+} // namespace skl

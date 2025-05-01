@@ -1,0 +1,88 @@
+//!
+//! \file skl_rand
+//!
+//! \brief very very fast, noise based rand api
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_assert"
+
+namespace skl {
+
+using rand_seed_t     = u32;
+using rand_position_t = u32;
+
+namespace skl_rand_internals {
+    //! [ThreadLocal] Get a random [0, u32_max] value
+    [[nodiscard]] u32 skl_rand(rand_position_t f_pos, rand_seed_t f_seed) noexcept;
+
+    //! [ThreadLocal] Get a random [0, u32_max] value based on f_x and f_y
+    [[nodiscard]] u32 skl_rand_2d(i32 f_x, i32 f_y, rand_seed_t f_seed) noexcept;
+
+    //! [ThreadLocal] Get a random [0, u32_max] value based on f_x, f_y and f_z
+    [[nodiscard]] u32 skl_rand_3d(i32 f_x, i32 f_y, i32 f_z, rand_seed_t f_seed) noexcept;
+} // namespace skl_rand_internals
+
+//! Very fast, noise based RNG
+//! \remark cpu tick seed level resolution (epoch time based)
+class SklRand {
+public:
+    SklRand() noexcept {
+        (void)new_seed();
+    }
+
+    SklRand(const SklRand&) noexcept            = default;
+    SklRand& operator=(const SklRand&) noexcept = default;
+    SklRand(SklRand&&) noexcept                 = default;
+    SklRand& operator=(SklRand&&) noexcept      = default;
+    ~SklRand() noexcept                         = default;
+
+    //! Generate pseudo random value in interval [0, UINT32_MAX] (1d noise)
+    [[nodiscard]] u32 next() noexcept {
+        return skl_rand_internals::skl_rand(pos(), m_seed);
+    }
+
+    //! Generate pseudo random value in interval [0, UINT32_MAX] (2d noise)
+    [[nodiscard]] u32 next_2d(i32 f_x, i32 f_y) const noexcept {
+        return skl_rand_internals::skl_rand_2d(f_x, f_y, m_seed);
+    }
+
+    //! Generate pseudo random value in interval [0, UINT32_MAX] (3d noise)
+    [[nodiscard]] u32 next_3d(i32 f_x, i32 f_y, i32 f_z) const noexcept {
+        return skl_rand_internals::skl_rand_3d(f_x, f_y, f_z, m_seed);
+    }
+
+    //! Generate pseudo random value in interval [f_min, f_max]
+    [[nodiscard]] u32 next_range(u32 f_min, u32 f_max) noexcept {
+        SKL_ASSERT(f_min <= f_max);
+        return (skl_rand_internals::skl_rand(pos(), m_seed) % (f_max - f_min)) + f_min;
+    }
+
+    //! Generate pseudo random value in interval (0.0f, 1.0f]
+    [[nodiscard]] float next_f() noexcept {
+        constexpr auto FMaxUInt32 = static_cast<float>(u32(0xFFFFFFFFU));
+        return static_cast<float>(next()) / FMaxUInt32;
+    }
+
+    //! Generate pseudo random value in interval (0.0, 1.0]
+    [[nodiscard]] double next_d() noexcept {
+        constexpr auto DMaxUInt32 = static_cast<double>(u32(0xFFFFFFFFU));
+        return static_cast<double>(next()) / DMaxUInt32;
+    }
+
+private:
+    [[nodiscard]] rand_position_t new_seed() noexcept;
+    [[nodiscard]] rand_position_t pos() noexcept;
+
+private:
+    rand_seed_t     m_seed     = 0U; //!< Seed of this rand instance
+    rand_position_t m_position = 0U; //!< Position to generate the next noise from
+};
+
+//! [LibInit][ThreadLocal] Get the thread local instance of SklRand
+[[nodiscard]] SklRand& get_thread_rand() noexcept;
+
+} // namespace skl
