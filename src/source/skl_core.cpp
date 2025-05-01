@@ -6,7 +6,6 @@
 #include <cstdio>
 
 #include "skl_core"
-#include "skl_thread_id"
 #include "skl_signal"
 #include "skl_assert"
 #include "skl_atomic"
@@ -33,12 +32,16 @@ skl_status skl_core_init() noexcept {
         return SKL_OK_REDUNDANT;
     }
 
+    SKL_ASSERT_PERMANENT(init_program_epilog().is_success());
+
     if (skl_core_init_thread().is_failure()) {
         (void)g_is_skl_core_init.exchange(false);
         return SKL_ERR_FAIL;
     }
 
+#if 0
     puts("SKL_CORE_INIT!");
+#endif
     return SKL_SUCCESS;
 }
 
@@ -46,8 +49,6 @@ skl_status skl_core_init_thread() noexcept {
     if (g_is_skl_core_init_on_thread) {
         return SKL_OK_REDUNDANT;
     }
-
-    SKL_ASSERT_PERMANENT(init_program_epilog().is_success());
 
     if (skl_core_init_thread__rand().is_failure()) {
         return SKL_ERR_INIT_LOG;

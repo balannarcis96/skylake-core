@@ -16,6 +16,7 @@ constexpr skl_status_raw SKL_CUSTOM_ERR_MAX = -10000;
 //All core statuses
 enum skl_core_statuses : skl_status_raw {
     //Error statuses
+    SKL_ERR_CONFIG     = -32,
     SKL_ERR_OVERFLOW   = -31,
     SKL_ERR_NOT_IMPL   = -30,
     SKL_ERR_RX         = -29,
