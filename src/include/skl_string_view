@@ -7,91 +7,163 @@
 //!
 #pragma once
 
-/*
-    WHY NOT USING THE <string_view> HEADER?
-        To reduce header bloat and compilation times as much as possible!
-*/
+#include "skl_assert"
 
 namespace skl {
-class skl_string_view {
+struct skl_string_view {
 public:
     using size_type                 = unsigned long;
-    static constexpr size_type npos = 0xFFFFFFFFFFFFFFFFU;
+    static constexpr size_type npos = size_type(-1);
 
-    template <size_type _N>
-    explicit constexpr skl_string_view(const char (&f_str)[_N]) noexcept
-        : m_len(_N)
-        , m_str(f_str) {
+    //! Empty view
+    constexpr skl_string_view() noexcept
+        : m_len(0U)
+        , m_str("") {
     }
 
-    explicit constexpr skl_string_view(const char* f_str, size_type f_len) noexcept
-        : m_len(f_len)
-        , m_str(f_str) {
+    //! Simple constexpr impl of strlen
+    static constexpr size_type cstrlen(const char* f_string) noexcept {
+        size_type length = 0U;
+        while (char(0) != *f_string++) {
+            ++length;
+        }
+        return length;
     }
 
-    //This should be only used with _StringView = std::string_view
-    template <typename _StringView>
-    explicit constexpr skl_string_view(const _StringView& view) noexcept;
+    //! Simple (safer) constexpr impl of strlen
+    static constexpr size_type cstrlen_s(const char* f_string, size_type f_max_length) noexcept {
+        size_type length = 0U;
+        while ((f_max_length-- > 0U) && (char(0) != *f_string++)) {
+            ++length;
+        }
+        return length;
+    }
 
+    //! Construct from a given cstring \p f_str
+    //! \remark Unsafe version, make sure that the \p f_str is a valid c-string (null-terminated)
+    [[nodiscard]] static constexpr skl_string_view from_cstr(const char* f_str) noexcept {
+        SKL_ASSERT(nullptr != f_str);
+        return skl_string_view{f_str, cstrlen(f_str)};
+    }
+
+    //! Construct from a given cstring \p f_str with a given max length \p f_max_size
+    //! \remark Safer than from_cstr(f_str) but make sure that the \p f_str is a valid c-string (null-terminated)
+    [[nodiscard]] static constexpr skl_string_view from_cstr(const char* f_str, size_type f_max_length) noexcept {
+        SKL_ASSERT(nullptr != f_str);
+        return skl_string_view{f_str, cstrlen_s(f_str, f_max_length)};
+    }
+
+    //! Construct from a given buffer ptr \p f_str and a given length \p f_length
+    //! \remark No way to check that the given buffer is of \p f_length length
+    [[nodiscard]] static constexpr skl_string_view exact(const char* f_str, size_type f_length) noexcept {
+        SKL_ASSERT(nullptr != f_str);
+        return skl_string_view{f_str, f_length};
+    }
+
+    //! Construct from a given buffer c-string fixed size array \p f_str
+    //! \remark cstrlen_s is used to deduce the length of the string inside the given buffer \p f_str
+    template <unsigned long _N>
+    [[nodiscard]] static constexpr skl_string_view from_cstr(const char (&f_str)[_N]) noexcept {
+        return skl_string_view{f_str, cstrlen_s(f_str, _N)};
+    }
+
+    //! Construct from a given buffer c-string fixed size array \p f_str
+    template <unsigned long _N>
+    [[nodiscard]] static constexpr skl_string_view exact(const char (&f_buffer)[_N]) noexcept {
+        return exact(f_buffer, _N);
+    }
+
+    //! Produce substr view
     [[nodiscard]] constexpr skl_string_view substr(size_type f_pos) const noexcept {
+        if (f_pos >= m_len) {
+            return {}; //Empty view
+        }
+
         return skl_string_view{m_str + f_pos, m_len - f_pos};
     }
 
-    [[nodiscard]] constexpr auto find_last_of(char f_char) const noexcept {
-        size_type pos = m_len - 1U;
-        do {
-            if (m_str[pos] == f_char) {
+    //! Produce substr view
+    [[nodiscard]] constexpr skl_string_view substr(size_type f_pos, size_type f_length) const noexcept {
+        if (f_pos >= m_len) {
+            return {}; //Empty view
+        }
+
+        const auto max_len    = m_len - f_pos;
+        const auto new_length = f_length > max_len ? max_len : f_length;
+        return skl_string_view{m_str + f_pos, new_length};
+    }
+
+    //! Covert to a std::string_view
+    template <typename _StringView>
+    [[nodiscard]] constexpr _StringView std() const noexcept {
+        return _StringView(m_str, m_len);
+    }
+
+    //! Get the length of the string
+    [[nodiscard]] constexpr size_type length() const noexcept { return m_len; }
+
+    //! Get the string buffer pointer
+    //! \remark Not guaranteed to be a c-string buffer
+    [[nodiscard]] constexpr const char* data() const noexcept { return m_str; }
+
+    //! Is this an empty view
+    [[nodiscard]] constexpr bool empty() const noexcept { return 0U == m_len; }
+
+    //! Find last occurance of \p f_char(s)
+    //! \returns npos if none found
+    //! \remarks All params must be of type char and at least one param is required
+    template <typename... _Char>
+    [[nodiscard]] constexpr size_type find_last_of(_Char... f_char) const noexcept {
+        static_assert(sizeof...(_Char) > 0U);
+        static_assert((__is_same(_Char, char) && ...), "skl_string_view::find_last_of() reaquires all params to be of type char");
+
+        size_type   pos = m_len;
+        const auto* ptr = m_str;
+        while (pos-- > 0U) {
+            const char c = ptr[pos];
+            if (((c == f_char) || ...)) {
                 return pos;
             }
-        } while (pos-- > 0);
+        }
 
         return npos;
     }
 
-    [[nodiscard]] constexpr auto find_last_of(char f_char, char f_alt_char) const noexcept {
-        size_type pos = m_len;
-        do {
-            if (m_str[pos - 1U] == f_char || m_str[pos - 1U] == f_alt_char) {
-                return pos - 1U;
-            }
-        } while (--pos > 0);
-
-        return npos;
-    }
-
-    [[nodiscard]] constexpr auto length() const noexcept { return m_len; }
-    [[nodiscard]] constexpr auto data() const noexcept { return m_str; }
-    [[nodiscard]] constexpr auto empty() const noexcept { return m_str[0U] == 0; }
-
-    template <unsigned long _N>
-    [[nodiscard]] static constexpr skl_string_view from_cstr(const char(&f_str)[_N]) noexcept {
-        return skl_string_view{f_str, _N - 1U};
-    }
-
-    template <typename _TChar, int _N>
-    constexpr size_type copy(_TChar (&f_buffer)[_N]) const noexcept {
+    //! Copy min(_N, length()) chars into \p f_out_buffer
+    template <typename _TChar, size_type _N>
+    constexpr size_type copy(_TChar (&f_out_buffer)[_N]) const noexcept {
         static_assert(__is_same(_TChar, char) || __is_same(_TChar, unsigned char));
-        const auto copy_amount = _N > length() ? length() : _N;
-        for (int i = 0; i < copy_amount; ++i) {
-            f_buffer[i] = _TChar(m_str[i]);
+        const auto copy_amount = _N > m_len ? m_len : _N;
+        for (size_type i = 0U; i < copy_amount; ++i) {
+            f_out_buffer[i] = _TChar(m_str[i]);
         }
         return copy_amount;
     }
 
-    [[nodiscard]] constexpr size_type str_len() const noexcept {
-        size_type i = 0U;
-        while ((i < m_len) && (0 != m_str[i])) {
-            ++i;
+    //! Copy min(_N - 1U, length()) chars into \p f_out_buffer
+    //! \remark Write a 0 (null-terminator) a-> f_out_buffer[min(_N - 1U, length())] = 0;
+    template <typename _TChar, size_type _N>
+    constexpr size_type copy_and_terminate(_TChar (&f_out_buffer)[_N]) const noexcept {
+        static_assert(_N > 0U, "f_out_buffer must have at least size 1");
+        static_assert(__is_same(_TChar, char) || __is_same(_TChar, unsigned char));
+        const auto copy_amount = (_N - 1U) > m_len ? m_len : (_N - 1U);
+        for (size_type i = 0U; i < copy_amount; ++i) {
+            f_out_buffer[i] = _TChar(m_str[i]);
         }
+        f_out_buffer[copy_amount] = _TChar(0);
+        return copy_amount;
+    }
 
-        return i;
+private:
+    explicit constexpr skl_string_view(const char* f_str, size_type f_len) noexcept
+        : m_len(f_len)
+        , m_str(f_str) {
     }
 
 private:
     size_type   m_len;
     const char* m_str;
 };
-
 } // namespace skl
 
-#define SKL_CURRENT_FILE_NAME ::skl::skl_string_view{__FILE__}.substr(::skl::skl_string_view{__FILE__}.find_last_of('/', '\\') + 1U)
+#define SKL_CURRENT_FILE_NAME ::skl::skl_string_view::from_cstr(__FILE__).substr(::skl::skl_string_view::from_cstr(__FILE__).find_last_of('/', '\\') + 1U)

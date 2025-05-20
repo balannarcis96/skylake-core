@@ -214,10 +214,10 @@ template <bool _AllowColors>
         fmt_buffer.write<byte>(0U); //null-terminator
     }
 
-    SKL_ASSERT_CRITICAL(fmt_buffer.position() < fmt_buffer.length());
+    SKL_ASSERT_CRITICAL((0U < fmt_buffer.position()) && (fmt_buffer.position() < fmt_buffer.length()));
 
     //Return as string view
-    return skl::skl_string_view{reinterpret_cast<const char*>(fmt_buffer.buffer()), fmt_buffer.position()};
+    return skl::skl_string_view::exact(reinterpret_cast<const char*>(fmt_buffer.buffer()), fmt_buffer.position() - 1U);
 }
 
 template <bool _AllowColors>
@@ -300,7 +300,7 @@ skl::skl_string_view slogger_backend_process(skl::skl_stream& f_stream) noexcept
                     skl::skl_buffer_view temp{skl::array_size(backend.g_bend_output_buffer) - 1U, reinterpret_cast<byte*>(backend.g_bend_output_buffer)};
                     auto&                temp_stream = skl::skl_stream::make(temp);
                     temp_stream.write_unsafe("[SLogger] -- UNKNOWN ARG TYPE!");
-                    return skl::skl_string_view{backend.g_bend_output_buffer, temp_stream.position()};
+                    return skl::skl_string_view::exact(backend.g_bend_output_buffer, temp_stream.position() - 1U);
                 }
         }
     }
@@ -310,7 +310,7 @@ skl::skl_string_view slogger_backend_process(skl::skl_stream& f_stream) noexcept
                                               fmt::string_view{fmt_str.data(), fmt_str.length()},
                                               args);
 
-    return skl::skl_string_view{backend.g_bend_output_buffer, fmt_result.size};
+    return skl::skl_string_view::exact(backend.g_bend_output_buffer, fmt_result.size);
 }
 
 } // namespace

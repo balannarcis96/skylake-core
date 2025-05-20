@@ -8,6 +8,7 @@ set(FMT_SYSTEM_HEADERS OFF)
 set(FMT_INSTALL OFF)
 add_subdirectory("fmt")
 target_link_libraries(fmt PUBLIC -lc++ -lc++abi)
+target_compile_definitions(fmt PUBLIC FMT_USE_FULL_CACHE_DRAGONBOX=1)
 
 add_subdirectory("ya_getopt")
 

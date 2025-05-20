@@ -35,7 +35,8 @@ public:
 
     explicit SKLThread(skl_string_view f_name) noexcept
         : m_name{0} {
-        f_name.copy(m_name);
+        f_name.copy_and_terminate(m_name);
+        m_name_view = skl_string_view::from_cstr(m_name);
     }
 
     SKLThread(const SKLThread&)            = delete;
@@ -66,7 +67,7 @@ public:
 
     //! Get the thread name
     [[nodiscard]] skl_string_view name() const noexcept {
-        return skl_string_view{m_name, std::size(m_name)};
+        return m_name_view;
     }
 
     //! Detach this thread
@@ -111,6 +112,7 @@ private:
     std::relaxed_value<bool>           m_bRun{false};                  //!< Internal run flag
     std::relaxed_value<bool>           m_bIsJoinable{true};            //!< Is this thread joinable
     char                               m_name[128U]{"SKLThread"};      //!< Name of the thread
+    skl_string_view                    m_name_view;                    //!< Name view
 
     friend void* thread_run_proxy(void*) noexcept;
 };
