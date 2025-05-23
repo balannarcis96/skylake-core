@@ -73,6 +73,16 @@ public:
         return exact(f_buffer, _N);
     }
 
+    //! Construct from a given buffer c-string fixed size array \p f_str
+    //! \remark The given \p f_str array is treated as a buffer containing a c-str string
+    //! \remark The array must not be empty, min length = 1 (null-terminator)
+    template <unsigned long _N>
+    [[nodiscard]] static constexpr skl_string_view exact_cstr(const char (&f_buffer)[_N]) noexcept
+        requires(0U < _N)
+    {
+        return exact(f_buffer, _N - 1U); //Ignore the null-terminator for the length
+    }
+
     //! Produce substr view
     [[nodiscard]] constexpr skl_string_view substr(size_type f_pos) const noexcept {
         if (f_pos >= m_len) {

@@ -37,7 +37,8 @@ enum ELogParamType : u8 {
     EUInt64,
     EFloat,
     EDouble,
-    EString
+    EString,
+    EStringView,
 };
 
 [[nodiscard]] skl_stream& skl_begin_log() noexcept;
@@ -57,7 +58,7 @@ struct SKLSerializedLoggerFrontEnd {
     template <ELogType _Type, u64 _FileNameLength, u16 _LineNumber, u64 _FormatStringSize, typename... _Args>
     static void log(skl_string_view f_file_name, const char (&f_fmt)[_FormatStringSize], _Args... f_args) noexcept {
         //Check that the Fixed hader, file name and fmt string can fit in the serialized logging front end buffer
-        constexpr u64 _MinRequiredSize = CSerializedLoggerFixedHeaderSize + _FileNameLength + _FormatStringSize;
+        constexpr u64 _MinRequiredSize = CSerializedLoggerFixedHeaderSize + _FileNameLength + _FormatStringSize + (sizeof(skl_stream::str_len_prefix_t) * 2U);
         static_assert(CSerializedLoggerFrontEndBufferMinSize >= _MinRequiredSize);
 
         auto& log_buffer = skl_begin_log();
@@ -70,7 +71,7 @@ struct SKLSerializedLoggerFrontEnd {
     template <ELogType _Type, u64 _FileNameLength, u16 _LineNumber, u64 _FormatStringSize, typename... _Args>
     static void log_specific(slogger_sink_id_t f_sink_id, skl_string_view f_file_name, const char (&f_fmt)[_FormatStringSize], _Args... f_args) noexcept {
         //Check that the Fixed hader, file name and fmt string can fit in the serialized logging front end buffer
-        constexpr u64 _MinRequiredSize = CSerializedLoggerFixedHeaderSize + _FileNameLength + _FormatStringSize;
+        constexpr u64 _MinRequiredSize = CSerializedLoggerFixedHeaderSize + _FileNameLength + _FormatStringSize + (sizeof(skl_stream::str_len_prefix_t) * 2U);
         static_assert(CSerializedLoggerFrontEndBufferMinSize >= _MinRequiredSize);
 
         auto& log_buffer = skl_begin_log(f_sink_id);
@@ -84,19 +85,19 @@ private:
     //! \note Protocol: Skylake Protocol
     template <ELogType _Type, u64 _FormatStringSize, typename... _Args>
     [[nodiscard]] static bool serialize(skl_stream& f_stream, u16 f_line_number, skl_string_view f_file_name, const char (&f_fmt)[_FormatStringSize], _Args... f_args) noexcept {
-        //3. Log Type (We are guaranteed to have space for the type)
+        //Log Type (We are guaranteed to have space for the type)
         f_stream.write<u8>(u8(_Type));
 
-        //4. Line number (We are guaranteed to have space for the line number)
+        //Line number (We are guaranteed to have space for the line number)
         f_stream.write<u16>(f_line_number);
 
-        //5. File name (We are guaranteed to have space for the file name string)
-        f_stream.write_unsafe(reinterpret_cast<const byte*>(f_file_name.data()), f_file_name.length());
+        //File name (We are guaranteed to have space for the file name string)
+        f_stream.write_length_prefixed_str_checked(f_file_name);
 
-        //6. Format string (We are guaranteed to have space for the fmt string)
-        f_stream.write_unsafe(f_fmt);
+        //Format string (We are guaranteed to have space for the fmt string)
+        f_stream.write_length_prefixed_str_checked(skl_string_view::exact_cstr(f_fmt));
 
-        //7. Write Params if any (We are guaranteed to have space for the params count)
+        //Write Params if any (We are guaranteed to have space for the params count)
         f_stream.write<u16>(static_cast<u16>(sizeof...(_Args)));
 
         //Until here we rely on the min check of the log buffer size to guarantee that we had space,
@@ -141,9 +142,15 @@ private:
 
         //2. Write value
         if constexpr (b_is_string) {
-            const auto result = f_stream.write_str(f_arg);
-            SKL_ASSERT(result);
-            if (false == result) {
+            const auto result = f_stream.write_length_prefixed_str(skl_string_view::from_cstr(f_arg));
+            SKL_ASSERT(result.is_success());
+            if (result.is_failure()) {
+                [[unlikely]] return false;
+            }
+        } else if constexpr (arg_type == ELogParamType::EStringView) {
+            const auto result = f_stream.write_length_prefixed_str(f_arg);
+            SKL_ASSERT(result.is_success());
+            if (result.is_failure()) {
                 [[unlikely]] return false;
             }
         } else {
@@ -170,6 +177,8 @@ private:
 
         if constexpr (is_cstring<_Arg, char>()) {
             return ELogParamType::EString;
+        } else if constexpr (__is_same(_RawArgType, skl_string_view)) {
+            return ELogParamType::EStringView;
         } else if constexpr (__is_same(_RawArgType, i8)) {
             return ELogParamType::EInt8;
         } else if constexpr (__is_same(_RawArgType, u8)) {

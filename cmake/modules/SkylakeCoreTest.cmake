@@ -27,6 +27,12 @@ function( skl_AddCoreTest
 
     set_target_properties(${_TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/skl-core-tests")
 
+    # CTest
+    add_test(
+        NAME ${_TARGET_NAME}
+        COMMAND ${_TARGET_NAME}
+    )
+
 endfunction()
 
 # Note: Requires the test to define the main() function
@@ -52,5 +58,11 @@ function( skl_AddStandaloneCoreTest
     target_link_libraries(${_TARGET_NAME} PUBLIC "gmock")
     
     set_target_properties(${_TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/skl-core-tests")
+
+    # CTest
+    add_test(
+        NAME ${_TARGET_NAME}
+        COMMAND ${_TARGET_NAME}
+    )
 
 endfunction()

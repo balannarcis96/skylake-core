@@ -9,7 +9,7 @@
 
 #include "skl_buffer_view"
 #include "skl_assert"
-#include "skl_status"
+#include "skl_result"
 #include "skl_pair"
 #include "skl_string_view"
 
@@ -17,6 +17,9 @@ namespace skl {
 //! [ATRP]
 struct skl_stream {
 public:
+    // String length prefix type
+    using str_len_prefix_t = u32;
+
     //ATRP
     skl_stream() noexcept                    = delete;
     ~skl_stream() noexcept                   = delete;
@@ -169,9 +172,21 @@ public:
     [[nodiscard]] skl_buffer_view cstring_view() noexcept {
         auto       result      = remaining_view();
         const auto skip_result = skip_cstring();
-        result.length        = skip_result.first;
+        result.length          = skip_result.first;
         return result;
     }
+
+    //! Read a length prefixed string
+    //! \return SKL_ERR_SIZE If the stream has no space for a valid length prefixed string
+    //! \return SKL_ERR_CORRUPT If the length of the string is bigger than the remaining buffer
+    //! \return <skl_string_view> On success a valid string view is returned and the stream position if advanced
+    [[nodiscard]] skl_result<skl_string_view> read_length_prefixed_str() noexcept;
+
+    //! Read a length prefixed string
+    //! \remark Asserts the stream has valid remaining()
+    //! \return <skl_string_view> A valid string view is returned and the stream position if advanced
+    [[nodiscard]] skl_string_view read_length_prefixed_str_checked() noexcept;
+
     //Write API
 
     //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
@@ -250,44 +265,24 @@ public:
         return false;
     }
 
-    //! Write string into buffer at current stream position
+    //! Write length prexied string into buffer at current stream position
     //! \remark Copies all non zero chars from \p f_string plus one zero char (null terminator)
-    //! \return true if the whole \p f_string was successfully written
-    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
-    //! \note If the string exact size is known, use any of the write() function
-    [[nodiscard]] bool write_str(const char* const f_string) noexcept;
+    //! \return SKL_ERR_SIZE if there is no space for the whole string in the buffer
+    //! \return SKL_SUCCESS if the string was successfully copied into the stream
+    [[nodiscard]] skl_status write_length_prefixed_str(skl_string_view f_string) noexcept;
 
-    //! Write string into buffer at current stream position
-    //! \remark Copies up to \p f_copy_max charaters from \p f_string into the internal buffer
-    //! \return true if the whole \p f_string was successfully written
-    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
-    //! \note If the string exact size is known, use any of the write() function
-    [[nodiscard]] bool write_str(const char* const f_string, u32 f_copy_max) noexcept;
+    //! Write cstring into buffer at current stream position
+    //! \remark Copies all non zero chars from \p f_string plus one zero char (null terminator)
+    //! \return SKL_ERR_SIZE if there is no space for the whole string in the buffer
+    [[nodiscard]] skl_status write_cstr(skl_string_view f_string) noexcept;
 
-    //! Write string into buffer at current stream position
-    //! \remark Copies up to \p _N charaters from \p f_string into the internal buffer
-    //! \return true if the whole \p f_string was successfully written
-    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
-    //! \note If the string exact size is known, use any of the write() function
-    template <u32 _N>
-    [[nodiscard]] bool write_str(const char (&f_string)[_N]) noexcept {
-        return write_str(f_string, _N);
-    }
+    //! Write length prexied string into buffer at current stream position
+    //! \remark Asserts there is enough space
+    void write_length_prefixed_str_checked(skl_string_view f_string) noexcept;
 
-    //! Write string into buffer at current stream position
-    //! \remark Copies up to \p _N charaters from \p f_string into the internal buffer
-    //! \return true if the whole \p f_string was successfully written
-    //! \return false if the whole \p f_string cannot fit into the buffer (position is unchanged)
-    //! \note If the string exact size is known, use any of the write() functions
-    [[nodiscard]] bool write_str(skl_string_view f_string) noexcept {
-        return write_str(f_string.data(), f_string.length());
-    }
-
-    //! Write string into buffer at current stream position
-    //! \remark Copies up to \p f_copy_max charaters from \p f_string into the internal buffer
-    //! \invariant (Asserted) The whole \p f_string (with null terminator) fits in the remaining buffer
-    //! \note If the string exact size is known, use any of the write_unsafe() function
-    void write_str_unsafe(const char* const f_string) noexcept;
+    //! Write cstring into buffer at current stream position
+    //! \remark Asserts there is enough space
+    void write_cstr_checked(skl_string_view f_string) noexcept;
 
     //! Copy bytes from the given file into the buffer starting at the current position
     //! \returns SKL_ERR_EMPTY If the file is empty

@@ -48,6 +48,31 @@ pair<u32, bool> skl_stream::skip_cstring() noexcept {
     return {.first = count, .second = current_byte != 0U};
 }
 
+skl_result<skl_string_view> skl_stream::read_length_prefixed_str() noexcept {
+    if (remaining() < sizeof(str_len_prefix_t)) {
+        return skl_fail{SKL_ERR_SIZE};
+    }
+
+    const auto length = read<str_len_prefix_t>();
+    if (length > remaining()) {
+        seek_backward(sizeof(str_len_prefix_t));
+        return skl_fail{SKL_ERR_CORRUPT};
+    }
+
+    const auto* str = c_str();
+    seek_forward(length);
+    return skl_string_view::exact(str, length);
+}
+
+skl_string_view skl_stream::read_length_prefixed_str_checked() noexcept {
+    SKL_ASSERT_CRITICAL(remaining() >= sizeof(str_len_prefix_t));
+    const auto length = read<str_len_prefix_t>();
+    SKL_ASSERT_CRITICAL(length <= remaining());
+    const auto* str = c_str();
+    seek_forward(length);
+    return skl_string_view::exact(str, length);
+}
+
 bool skl_stream::write(const byte* f_source, u32 f_source_size) noexcept {
     SKL_ASSERT(nullptr != f_source);
     SKL_ASSERT(0U < f_source_size);
@@ -75,76 +100,58 @@ void skl_stream::write_unsafe(const byte* f_source, u32 f_source_size) noexcept 
     seek_forward(f_source_size);
 }
 
-bool skl_stream::write_str(const char* f_string) noexcept {
-    SKL_ASSERT(nullptr != f_string);
-    SKL_ASSERT(nullptr != buffer());
-    SKL_ASSERT(0U < length());
-
-    auto* begin = front();
-    u32   start = position();
-    u32   end   = length();
-    u32   index = 0U;
-    while ((start + index) < end) [[likely]] {
-        const auto current_char = f_string[index];
-        begin[index]            = f_string[index];
-
-        if (0 == current_char) {
-            [[unlikely]] break;
-        }
-
-        ++index;
+skl_status skl_stream::write_length_prefixed_str(skl_string_view f_string) noexcept {
+    if ((f_string.length() + sizeof(str_len_prefix_t)) > remaining()) {
+        return SKL_ERR_SIZE;
     }
 
-    if ((start + index) < end) {
-        seek_forward(index + 1);
-        [[likely]] return true;
+    //Write the length prefix
+    write<str_len_prefix_t>(f_string.length());
+
+    //Write string
+    if (false == f_string.empty()) [[likely]] {
+        write_unsafe(f_string.data(), f_string.length());
     }
 
-    return false;
+    [[likely]] return SKL_SUCCESS;
 }
 
-bool skl_stream::write_str(const char* f_string, u32 f_copy_max) noexcept {
-    SKL_ASSERT(nullptr != f_string);
-    SKL_ASSERT(nullptr != buffer());
-    SKL_ASSERT(0U < length());
-    SKL_ASSERT(0U < f_copy_max);
+void skl_stream::write_length_prefixed_str_checked(skl_string_view f_string) noexcept {
+    SKL_ASSERT_CRITICAL((f_string.length() + sizeof(str_len_prefix_t)) <= remaining());
 
-    auto* begin = front();
-    u32   start = position();
-    u32   end   = length();
-    u32   index = 0U;
-    while ((index < f_copy_max) && ((start + index) < end)) [[likely]] {
-        const auto current_char = f_string[index];
-        begin[index]            = f_string[index];
+    //Write the length prefix
+    write<str_len_prefix_t>(f_string.length());
 
-        if (0 == current_char) {
-            [[unlikely]] break;
-        }
-
-        ++index;
+    //Write string
+    if (false == f_string.empty()) [[likely]] {
+        write_unsafe(f_string.data(), f_string.length());
     }
-
-    if ((start + index) < end) {
-        seek_forward(index + 1);
-        [[likely]] return true;
-    }
-
-    return false;
 }
 
-void skl_stream::write_str_unsafe(const char* f_string) noexcept {
-    SKL_ASSERT(nullptr != f_string);
-    SKL_ASSERT(nullptr != buffer());
-    SKL_ASSERT(0U < length());
-
-    auto* begin = front();
-    u32   index = 0U;
-    while (0 != f_string[index]) {
-        begin[index] = f_string[index];
-        ++index;
+skl_status skl_stream::write_cstr(skl_string_view f_string) noexcept {
+    if ((f_string.length() + sizeof(char)) > remaining()) {
+        return SKL_ERR_SIZE;
     }
-    begin[index++] = 0;
-    seek_forward(index);
+
+    if (false == f_string.empty()) [[likely]] {
+        write_unsafe(f_string.data(), f_string.length());
+    }
+
+    //Write null-terminator
+    write<char>(0);
+
+    [[likely]] return SKL_SUCCESS;
+}
+
+void skl_stream::write_cstr_checked(skl_string_view f_string) noexcept {
+    SKL_ASSERT_CRITICAL((f_string.length() + sizeof(char)) <= remaining());
+
+    if (false == f_string.empty()) [[likely]] {
+        write_unsafe(f_string.data(), f_string.length());
+    }
+
+    //Write null-terminator
+    write<char>(0);
 }
 
 void skl_stream::zero() noexcept {

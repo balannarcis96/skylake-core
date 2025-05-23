@@ -16,6 +16,7 @@ constexpr skl_status_raw SKL_CUSTOM_ERR_MAX = -10000;
 //All core statuses
 enum skl_core_statuses : skl_status_raw {
     //Error statuses
+    SKL_ERR_CORRUPT    = -33,
     SKL_ERR_CONFIG     = -32,
     SKL_ERR_OVERFLOW   = -31,
     SKL_ERR_NOT_IMPL   = -30,
@@ -57,6 +58,7 @@ enum skl_core_statuses : skl_status_raw {
     //Success statuses
     SKL_OK_REPEAT    = 1,
     SKL_OK_REDUNDANT = 2,
+    SKL_OK_EMPTY     = 3,
 };
 
 //All custom success statuses must start from this value (including)!

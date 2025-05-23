@@ -43,8 +43,8 @@ struct DeserializeResult {
     u32                  m_timestamp   = 0U;
     u16                  m_uid         = 0;
     u16                  m_line_number = 0U;
-    skl::skl_buffer_view m_file_name;
-    skl::skl_buffer_view m_fmt_string;
+    skl::skl_string_view m_file_name;
+    skl::skl_string_view m_fmt_string;
     u16                  m_args_count = 0U;
     skl::skl_buffer_view m_args_buffer;
     skl::ELogType        m_type = skl::ELogType::ELogInfo;
@@ -65,8 +65,8 @@ struct DeserializeResult {
     result.m_uid         = f_stream.read<u16>();
     result.m_type        = static_cast<skl::ELogType>(f_stream.read<u8>());
     result.m_line_number = f_stream.read<u16>();
-    result.m_file_name   = f_stream.cstring_view();
-    result.m_fmt_string  = f_stream.cstring_view();
+    result.m_file_name   = f_stream.read_length_prefixed_str_checked();
+    result.m_fmt_string  = f_stream.read_length_prefixed_str_checked();
     result.m_args_count  = f_stream.read<u16>();
 
     //Until here we rely on the min check of the log buffer size to guarantee that we had space,
@@ -190,7 +190,7 @@ template <bool _AllowColors>
 
     //4. [FILE:LINE_NUMBER]
     fmt_buffer.write<byte>(byte('['));
-    fmt_buffer.write_unsafe(f_raw_log.m_file_name.buffer, f_raw_log.m_file_name.length - 1U);
+    fmt_buffer.write_unsafe(f_raw_log.m_file_name.data(), f_raw_log.m_file_name.length());
     fmt_buffer.write<byte>(byte(':'));
     temp_len = snprintf(temp_buffer, skl::array_size(temp_buffer) - 1U, "%d", i32(f_raw_log.m_line_number));
     fmt_buffer.write_unsafe(temp_buffer, temp_len); //timestamp_len does not count the null-terminator
@@ -205,10 +205,10 @@ template <bool _AllowColors>
     }
 
     //5. FMT_STR
-    fmt_buffer.write_unsafe(f_raw_log.m_fmt_string.buffer, f_raw_log.m_fmt_string.length - 1U);
+    fmt_buffer.write_unsafe(f_raw_log.m_fmt_string.data(), f_raw_log.m_fmt_string.length());
 
     //6.END
-    if constexpr (_AllowColors) {
+    if constexpr (CAllowColors) {
         fmt_buffer.write_unsafe(SKL_LOG_ANSI_COLOR_END);
     } else {
         fmt_buffer.write<byte>(0U); //null-terminator
@@ -216,8 +216,8 @@ template <bool _AllowColors>
 
     SKL_ASSERT_CRITICAL((0U < fmt_buffer.position()) && (fmt_buffer.position() < fmt_buffer.length()));
 
-    //Return as string view
-    return skl::skl_string_view::exact(reinterpret_cast<const char*>(fmt_buffer.buffer()), fmt_buffer.position() - 1U);
+    //Return as string view (including the null-terminator)
+    return skl::skl_string_view::exact(reinterpret_cast<const char*>(fmt_buffer.buffer()), fmt_buffer.position());
 }
 
 template <bool _AllowColors>
@@ -288,10 +288,14 @@ skl::skl_string_view slogger_backend_process(skl::skl_stream& f_stream) noexcept
                     args.push_back(args_stream.try_read<double>(0.0));
                 }
                 break;
+            case skl::ELogParamType::EStringView:
+                [[fallthrough]];
             case skl::ELogParamType::EString:
                 {
-                    args.push_back(args_stream.c_str());
-                    (void)args_stream.skip_cstring();
+                    auto str = args_stream.read_length_prefixed_str();
+                    if (str.is_success()) {
+                        args.push_back(str.value().std<std::string_view>());
+                    }
                 }
                 break;
             default:

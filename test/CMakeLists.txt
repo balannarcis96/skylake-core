@@ -5,3 +5,4 @@
 cmake_minimum_required(VERSION 4.0.0)
 
 skl_AddCoreTest("${CMAKE_CURRENT_SOURCE_DIR}/assert-ut")
+skl_AddCoreTest("${CMAKE_CURRENT_SOURCE_DIR}/logging-ut")

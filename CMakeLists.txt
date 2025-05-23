@@ -174,6 +174,9 @@ if(PROJECT_IS_TOP_LEVEL)
 
     # Add tests if possible
     if(SKL_CORE_ENABLE_TESTS)
+        # Enable CTest
+        enable_testing()
+
         # Add the gtest library
         add_subdirectory(third_party/googletest)
 

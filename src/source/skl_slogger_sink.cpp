@@ -172,7 +172,7 @@ skl_stream& slogger_sink_begin_log() noexcept {
 
 skl_stream& slogger_sink_begin_log(slogger_sink_id_t f_specific_sink_id) noexcept {
     auto* sink = g_skl_logger_sinks[f_specific_sink_id].load_relaxed();
-    SKL_ASSERT(nullptr != sink);
+    SKL_ASSERT_CRITICAL(nullptr != sink);
 
     auto& tls = g_sink_tls::tls_checked();
 
