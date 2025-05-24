@@ -11,14 +11,26 @@
 
 #include <magic_enum.h>
 
+#include "skl_string_view"
+
 namespace skl {
 //! Get the string for a given enum entry
-constexpr const char* enum_to_string(auto EnumValue) noexcept {
-    return magic_enum::enum_name(EnumValue).data();
+constexpr const char* enum_to_string(auto f_enum_value) noexcept {
+    return magic_enum::enum_name(f_enum_value).data();
 }
 //! Get the enum value given a cstring
 template <typename TEnum>
-constexpr std::optional<TEnum> enum_from_string(const char* InString) noexcept {
-    return magic_enum::enum_cast<TEnum>(InString);
+constexpr std::optional<TEnum> enum_from_string(const char* f_string) noexcept {
+    return magic_enum::enum_cast<TEnum>(f_string);
+}
+//! Get the enum value given a string view
+template <typename TEnum>
+constexpr std::optional<TEnum> enum_from_string(skl_string_view f_string) noexcept {
+    return magic_enum::enum_cast<TEnum>(f_string.std<std::string_view>());
+}
+//! Get the enum value given a string view
+template <typename TEnum>
+constexpr std::optional<TEnum> enum_from_string(std::string_view f_string) noexcept {
+    return magic_enum::enum_cast<TEnum>(f_string);
 }
 } // namespace skl

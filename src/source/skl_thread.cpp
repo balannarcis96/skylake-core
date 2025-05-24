@@ -5,6 +5,7 @@
 //!
 #include <cstdio>
 
+#include <unistd.h>
 #include <pthread.h>
 
 #include "skl_thread"
@@ -12,31 +13,38 @@
 #include "skl_core"
 
 namespace {
-[[nodiscard]] bool set_thread_affinity_impl(skl::ThreadHandle f_handle, skl::pair<i16, i16> f_cpu_index_range) noexcept {
+[[nodiscard]] bool set_thread_affinity_impl(skl::thread_t f_handle, skl::pair<i16, i16> f_cpu_index_range) noexcept {
     if (f_handle == skl::CInvalidThreadHandle) {
-        SWARNING_LOCAL("SetThreadAffinityImpl({}, {}, {}) Invalid thread handle!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
-        return false;
-    }
-
-    if (f_cpu_index_range.first > f_cpu_index_range.second) {
-        SWARNING_LOCAL("SetThreadAffinityImpl({}, {}, {}) Invalid cpu index range!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+        SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Invalid thread handle!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
         return false;
     }
 
     cpu_set_t set;
     CPU_ZERO(&set);
 
-    if (f_cpu_index_range.first == f_cpu_index_range.second) {
-        CPU_SET(f_cpu_index_range.first, &set);
-    } else {
-        for (i32 cpu_index = f_cpu_index_range.first; cpu_index <= f_cpu_index_range.second; ++cpu_index) {
+    if (f_cpu_index_range.first < 0 || f_cpu_index_range.second < 0) {
+        const long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+        for (long cpu_index = 0; cpu_index < nprocs; ++cpu_index) {
             CPU_SET(cpu_index, &set);
+        }
+    } else {
+        if (f_cpu_index_range.first > f_cpu_index_range.second) {
+            SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Invalid cpu index range!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+            return false;
+        }
+
+        if (f_cpu_index_range.first == f_cpu_index_range.second) {
+            CPU_SET(f_cpu_index_range.first, &set);
+        } else {
+            for (i32 cpu_index = f_cpu_index_range.first; cpu_index <= f_cpu_index_range.second; ++cpu_index) {
+                CPU_SET(cpu_index, &set);
+            }
         }
     }
 
     const auto result = ::pthread_setaffinity_np(f_handle, sizeof(cpu_set_t), &set);
     if (0 != result) {
-        SWARNING_LOCAL("SetThreadAffinityImpl({}, {}, {}) Failed!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+        SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Failed!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
         return false;
     }
 
@@ -45,8 +53,8 @@ namespace {
 } // namespace
 
 namespace skl {
-static_assert(__is_same(pthread_t, ThreadHandle));
-static_assert(sizeof(pthread_t) == sizeof(ThreadHandle));
+static_assert(__is_same(pthread_t, thread_t));
+static_assert(sizeof(pthread_t) == sizeof(thread_t));
 
 void* thread_run_proxy(void* f_arg) noexcept {
     SKL_ASSERT(nullptr != f_arg);
@@ -108,7 +116,7 @@ SKLThread::~SKLThread() noexcept {
     (void)join();
 }
 
-skl_status SKLThread::create(SKLThreadAffinity f_cpu_index_range) noexcept {
+skl_status SKLThread::create(thread_affinity_t f_cpu_index_range) noexcept {
     if (m_handle != CInvalidThreadHandle) {
         SWARNING_LOCAL("Attempting to create and already created thread!");
         return SKL_ERR_REPEAT;
@@ -125,22 +133,20 @@ skl_status SKLThread::create(SKLThreadAffinity f_cpu_index_range) noexcept {
         return SKL_ERR_ALLOC;
     }
 
-    if ((f_cpu_index_range.first >= 0) && (f_cpu_index_range.second >= 0)) {
-        //Set affinity
-        if (false == set_thread_affinity_impl(new_handle, f_cpu_index_range)) {
-            SERROR_LOCAL("SKLThread::Create() Failed to set new thread affinity Range[{} {}]!", f_cpu_index_range.first, f_cpu_index_range.second);
+    //Set affinity
+    if (false == set_thread_affinity_impl(new_handle, f_cpu_index_range)) {
+        SERROR_LOCAL("SKLThread::Create() Failed to set new thread affinity Range[{} {}]!", f_cpu_index_range.first, f_cpu_index_range.second);
 
-            //Set start failed. Stop early.
-            (void)m_bRun.exchange(false);
+        //Set start failed. Stop early.
+        (void)m_bRun.exchange(false);
 
-            //Increment the latch so the thread can continue
-            m_start_sync->count_down();
+        //Increment the latch so the thread can continue
+        m_start_sync->count_down();
 
-            //Join the thread
-            (void)::pthread_join(new_handle, nullptr);
+        //Join the thread
+        (void)::pthread_join(new_handle, nullptr);
 
-            return SKL_ERR_INIT;
-        }
+        return SKL_ERR_INIT;
     }
 
     //Set joinable
@@ -156,6 +162,42 @@ skl_status SKLThread::create(SKLThreadAffinity f_cpu_index_range) noexcept {
     (void)m_handle.exchange(new_handle);
 
     return SKL_SUCCESS;
+}
+
+skl_status SKLThread::set_affinity(thread_affinity_t f_cpu_index_range) noexcept {
+    return skl_status::from_bool(set_thread_affinity_impl(pthread_self(), f_cpu_index_range));
+}
+
+skl_result<u16> SKLThread::get_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept {
+    if ((nullptr == f_core_indices_buffer) || (0U == f_max_indices)) {
+        return skl_fail{SKL_ERR_PARAMS};
+    }
+
+    const i64 total = sysconf(_SC_NPROCESSORS_CONF);
+    if (total <= 0) {
+        return skl_fail{};
+    }
+
+    //Get this process CPU affinity mask
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    if (sched_getaffinity(0, sizeof(mask), &mask) != 0) {
+        return skl_fail{};
+    }
+
+    //Collect set bits (usable cores)
+    u16 count = 0U;
+    for (u16 i = 0U; i < static_cast<u16>(total); ++i) {
+        if (CPU_ISSET(i, &mask)) {
+            if (count >= f_max_indices) {
+                return SKL_ERR_OVERFLOW;
+            }
+
+            f_core_indices_buffer[count++] = i;
+        }
+    }
+
+    return count;
 }
 
 skl_status SKLThread::join() noexcept {

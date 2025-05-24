@@ -1,6 +1,6 @@
 {
     "version": "1",
-    "priority": "1",
+    "priority": "2",
     "presets": [
         {
             "name": "qa",

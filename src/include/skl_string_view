@@ -23,20 +23,28 @@ public:
 
     //! Simple constexpr impl of strlen
     static constexpr size_type cstrlen(const char* f_string) noexcept {
+#if __has_builtin(__builtin_strlen)
+        return __builtin_strlen(f_string);
+#else
         size_type length = 0U;
         while (char(0) != *f_string++) {
             ++length;
         }
         return length;
+#endif
     }
 
     //! Simple (safer) constexpr impl of strlen
     static constexpr size_type cstrlen_s(const char* f_string, size_type f_max_length) noexcept {
+#if __has_builtin(__builtin_strnlen)
+        return __builtin_strlen(f_string, f_max_length);
+#else
         size_type length = 0U;
         while ((f_max_length-- > 0U) && (char(0) != *f_string++)) {
             ++length;
         }
         return length;
+#endif
     }
 
     //! Construct from a given cstring \p f_str
@@ -103,7 +111,7 @@ public:
         return skl_string_view{m_str + f_pos, new_length};
     }
 
-    //! Covert to a std::string_view
+    //! Convert to a std::string_view
     template <typename _StringView>
     [[nodiscard]] constexpr _StringView std() const noexcept {
         return _StringView(m_str, m_len);
@@ -140,27 +148,27 @@ public:
     }
 
     //! Copy min(_N, length()) chars into \p f_out_buffer
-    template <typename _TChar, size_type _N>
-    constexpr size_type copy(_TChar (&f_out_buffer)[_N]) const noexcept {
-        static_assert(__is_same(_TChar, char) || __is_same(_TChar, unsigned char));
+    template <typename _Char, size_type _N>
+    constexpr size_type copy(_Char (&f_out_buffer)[_N]) const noexcept {
+        static_assert(__is_same(_Char, char) || __is_same(_Char, unsigned char));
         const auto copy_amount = _N > m_len ? m_len : _N;
         for (size_type i = 0U; i < copy_amount; ++i) {
-            f_out_buffer[i] = _TChar(m_str[i]);
+            f_out_buffer[i] = _Char(m_str[i]);
         }
         return copy_amount;
     }
 
     //! Copy min(_N - 1U, length()) chars into \p f_out_buffer
     //! \remark Write a 0 (null-terminator) a-> f_out_buffer[min(_N - 1U, length())] = 0;
-    template <typename _TChar, size_type _N>
-    constexpr size_type copy_and_terminate(_TChar (&f_out_buffer)[_N]) const noexcept {
+    template <typename _Char, size_type _N>
+    constexpr size_type copy_and_terminate(_Char (&f_out_buffer)[_N]) const noexcept {
         static_assert(_N > 0U, "f_out_buffer must have at least size 1");
-        static_assert(__is_same(_TChar, char) || __is_same(_TChar, unsigned char));
+        static_assert(__is_same(_Char, char) || __is_same(_Char, unsigned char));
         const auto copy_amount = (_N - 1U) > m_len ? m_len : (_N - 1U);
         for (size_type i = 0U; i < copy_amount; ++i) {
-            f_out_buffer[i] = _TChar(m_str[i]);
+            f_out_buffer[i] = _Char(m_str[i]);
         }
-        f_out_buffer[copy_amount] = _TChar(0);
+        f_out_buffer[copy_amount] = _Char(0);
         return copy_amount;
     }
 

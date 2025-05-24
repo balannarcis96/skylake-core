@@ -82,7 +82,7 @@ namespace skl::skl_tls_internals {
  *!                 CustomName::tls_destroy();
  *!             ! tls_destroy must be called at the end of each thread !
  */
-template <typename _ThreadLocalValue, StringLiteral Name, bool _UseCoreAllocator = false, u64 _CoreAllocAlignment = alignof(_ThreadLocalValue)>
+template <typename _ThreadLocalValue, str_literal_t Name, bool _UseCoreAllocator = false, u64 _CoreAllocAlignment = alignof(_ThreadLocalValue)>
 class ThreadLocal {
     static_assert(__is_class(_ThreadLocalValue), "Only supports class/struct types, for native types use thread_local!");
     static constexpr bool bDoSmallBufferOpt = (sizeof(_ThreadLocalValue) <= sizeof(void*));
@@ -227,24 +227,24 @@ private:
 } // namespace skl
 
 #define SKL_DECLARE_TLS_SINGLETON(SingletonTypeName, Name) \
-    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::StringLiteral(#Name)>;
+    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::str_literal_t(#Name)>;
 
 //Use this macro to define the tls singleton
 #define SKL_DEFINE_TLS_SINGLETON(SingletonTypeName, Name)                                                  \
     template <>                                                                                            \
-    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name)>::ThreadLocalValue{0U}; \
+    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::str_literal_t(#Name)>::ThreadLocalValue{0U}; \
     template <>                                                                                            \
-    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name)>::InitGuard{0U};
+    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::str_literal_t(#Name)>::InitGuard{0U};
 
 #define SKL_DECLARE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment) \
-    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::StringLiteral(#Name), true, Alignment>;
+    using Name = ::skl::ThreadLocal<SingletonTypeName, ::skl::str_literal_t(#Name), true, Alignment>;
 
 //Use this macro to define the tls singleton
 #define SKL_DEFINE_TLS_SINGLETON_CORE(SingletonTypeName, Name, Alignment)                                                   \
     template <>                                                                                                             \
-    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name), true, Alignment>::ThreadLocalValue{0U}; \
+    thread_local u64 skl::ThreadLocal<SingletonTypeName, skl::str_literal_t(#Name), true, Alignment>::ThreadLocalValue{0U}; \
     template <>                                                                                                             \
-    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::StringLiteral(#Name), true, Alignment>::InitGuard{0U};
+    thread_local byte skl::ThreadLocal<SingletonTypeName, skl::str_literal_t(#Name), true, Alignment>::InitGuard{0U};
 
 #define SKL_MAKE_TLS_SINGLETON(SingletonTypeName, Name) \
     SKL_DECLARE_TLS_SINGLETON(SingletonTypeName, Name)  \

@@ -15,20 +15,20 @@
 #include "skl_vector_if"
 
 namespace {
-__sighandler_t                       g_original_SIGABRT;                      //!<
-__sighandler_t                       g_original_SIGFPE;                       //!<
-__sighandler_t                       g_original_SIGILL;                       //!<
-__sighandler_t                       g_original_SIGSEGV;                      //!<
-__sighandler_t                       g_original_SIGINT;                       //!<
-__sighandler_t                       g_original_SIGTERM;                      //!<
-std::relaxed_value<bool>             g_program_epilog_init{false};            //!<
-std::relaxed_value<bool>             g_exit_handler_called{false};            //!<
-std::relaxed_value<bool>             g_abornal_exit_handler_called{false};    //!<
-std::relaxed_value<bool>             g_termination_req_handler_called{false}; //!<
-skl::skl_vector<skl::TEpilogHandler> g_exit_handlers{};                       //!<
-skl::skl_vector<skl::TEpilogHandler> g_abnormal_exit_handlers{};              //!<
-skl::skl_vector<skl::TEpilogHandler> g_termination_req_handlers{};            //!< 
-skl::spin_lock_t                     g_sig_handlers_lock{};                   //!<
+__sighandler_t                         g_original_SIGABRT;                      //!<
+__sighandler_t                         g_original_SIGFPE;                       //!<
+__sighandler_t                         g_original_SIGILL;                       //!<
+__sighandler_t                         g_original_SIGSEGV;                      //!<
+__sighandler_t                         g_original_SIGINT;                       //!<
+__sighandler_t                         g_original_SIGTERM;                      //!<
+std::relaxed_value<bool>               g_program_epilog_init{false};            //!<
+std::relaxed_value<bool>               g_exit_handler_called{false};            //!<
+std::relaxed_value<bool>               g_abornal_exit_handler_called{false};    //!<
+std::relaxed_value<bool>               g_termination_req_handler_called{false}; //!<
+skl::skl_vector<skl::epilog_handler_t> g_exit_handlers{};                       //!<
+skl::skl_vector<skl::epilog_handler_t> g_abnormal_exit_handlers{};              //!<
+skl::skl_vector<skl::epilog_handler_t> g_termination_req_handlers{};            //!<
+skl::spin_lock_t                       g_sig_handlers_lock{};                   //!<
 } // namespace
 
 namespace {
@@ -169,7 +169,7 @@ skl_status init_program_epilog() noexcept {
 
     return SKL_SUCCESS;
 }
-skl_status register_epilog_handler(TEpilogHandler&& f_handler) noexcept {
+skl_status register_epilog_handler(epilog_handler_t&& f_handler) noexcept {
     if (false == g_program_epilog_init) {
         return SKL_ERR_INIT;
     }
@@ -179,7 +179,7 @@ skl_status register_epilog_handler(TEpilogHandler&& f_handler) noexcept {
     g_sig_handlers_lock.unlock();
     return SKL_SUCCESS;
 }
-skl_status register_epilog_abnormal_handler(TEpilogHandler&& f_handler) noexcept {
+skl_status register_epilog_abnormal_handler(epilog_handler_t&& f_handler) noexcept {
     if (false == g_program_epilog_init) {
         return SKL_ERR_INIT;
     }
@@ -189,7 +189,7 @@ skl_status register_epilog_abnormal_handler(TEpilogHandler&& f_handler) noexcept
     g_sig_handlers_lock.unlock();
     return SKL_SUCCESS;
 }
-skl_status register_epilog_termination_handler(TEpilogHandler&& f_handler) noexcept {
+skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noexcept {
     if (false == g_program_epilog_init) {
         return SKL_ERR_INIT;
     }

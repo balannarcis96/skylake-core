@@ -10,16 +10,19 @@
 #include <latch>
 
 #include "skl_int"
-#include "skl_status"
+#include "skl_result"
 #include "skl_atomic"
 #include "skl_pair"
 #include "skl_assert"
 #include "skl_string_view"
 
 namespace skl {
-using SKLThreadAffinity                     = pair<i16, i16>;
-using ThreadHandle                          = u64;
-constexpr ThreadHandle CInvalidThreadHandle = 0U;
+using thread_affinity_t = pair<i16, i16>;
+
+//Thread handle
+using thread_t = u64;
+
+constexpr thread_t CInvalidThreadHandle = 0U;
 
 //! Thread abstraction
 //!
@@ -29,7 +32,7 @@ constexpr ThreadHandle CInvalidThreadHandle = 0U;
 //!
 class SKLThread {
 public:
-    using TExecutionHandler = std::function<i32(void)>;
+    using exec_handler_t = std::function<i32(void)>;
 
     SKLThread() noexcept = default;
 
@@ -51,6 +54,7 @@ public:
         , m_name(0) {
         f_other.name().copy(m_name);
         f_other.m_name[0U] = 0;
+        m_name_view        = skl_string_view::from_cstr(m_name);
         (void)f_other.m_handle.exchange(CInvalidThreadHandle);
     }
 
@@ -60,7 +64,18 @@ public:
     //! \param CPUIndexRange 0 based index of cores this thread is to be scheduled on(globally indexed)
     //! \note CPUIndexRange - (-1, -1) = any core/no affinity - default
     //! \note CPUIndexRange - (x, x) = same index in range to force scheduling on a spcific core
-    [[nodiscard]] skl_status create(SKLThreadAffinity f_cpu_index_range = {-1, -1}) noexcept;
+    [[nodiscard]] skl_status create(thread_affinity_t f_cpu_index_range = {-1, -1}) noexcept;
+
+    //! Set the thread affinity for the calling thread
+    //! \param CPUIndexRange 0 based index of cores this thread is to be scheduled on(globally indexed)
+    //! \note CPUIndexRange - (-1, -1) = any core/no affinity - default
+    //! \note CPUIndexRange - (x, x) = same index in range to force scheduling on a spcific core
+    [[nodiscard]] static skl_status set_affinity(thread_affinity_t f_cpu_index_range) noexcept;
+
+    //! Get the set of cpu indices the process is allowed to use
+    //! \returns SKL_ERR_FAIL if failed to get the core count or affinity mask
+    //! \returns SKL_ERR_OVERFLOW if \p f_core_indices_buffer does not fit the available core indices count
+    [[nodiscard]] static skl_result<u16> get_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept;
 
     //! Join this thread
     [[nodiscard]] skl_status join() noexcept;
@@ -80,7 +95,7 @@ public:
     }
 
     //! Get the native handle of this thread
-    [[nodiscard]] ThreadHandle handle() const noexcept {
+    [[nodiscard]] thread_t handle() const noexcept {
         return m_handle;
     }
 
@@ -105,8 +120,8 @@ private:
     }
 
 private:
-    TExecutionHandler                  m_handler;                      //!< Functor called by the spawned thread
-    std::relaxed_value<ThreadHandle>   m_handle{CInvalidThreadHandle}; //!< Thread native handle
+    exec_handler_t                     m_handler;                      //!< Functor called by the spawned thread
+    std::relaxed_value<thread_t>       m_handle{CInvalidThreadHandle}; //!< Thread native handle
     std::relaxed_value<skl_status_raw> m_result_value{SKL_SUCCESS};    //!< Result value after execution ended
     std::unique_ptr<std::latch>        m_start_sync{nullptr};          //!< Start sync latch
     std::relaxed_value<bool>           m_bRun{false};                  //!< Internal run flag

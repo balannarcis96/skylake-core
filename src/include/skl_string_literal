@@ -8,22 +8,22 @@
 #pragma once
 
 namespace skl {
-using TStringLiteralSize = unsigned long long;
+using str_literal_size_t = unsigned long long;
 
-template <TStringLiteralSize N>
-struct StringLiteral {
-    static constexpr TStringLiteralSize CBufferLength      = N;
-    static constexpr TStringLiteralSize CBufferBytesLength = N;
-    static constexpr TStringLiteralSize CLength            = N - 1;
+template <str_literal_size_t _N>
+struct str_literal_t {
+    static constexpr str_literal_size_t CBufferLength      = _N;
+    static constexpr str_literal_size_t CBufferBytesLength = _N;
+    static constexpr str_literal_size_t CLength            = _N - 1;
 
-    constexpr explicit StringLiteral(const char (&string)[N]) noexcept {
-        for (TStringLiteralSize i = 0U; i < N; ++i) {
-            m_value[i] = string[i];
+    constexpr explicit str_literal_t(const char (&f_string)[_N]) noexcept {
+        for (str_literal_size_t i = 0U; i < _N; ++i) {
+            m_value[i] = f_string[i];
         }
     }
 
     [[nodiscard]] constexpr const char* value() const noexcept { return m_value; }
 
-    char m_value[N];
+    char m_value[_N];
 };
 } // namespace skl
