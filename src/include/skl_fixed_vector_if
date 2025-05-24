@@ -72,51 +72,78 @@ public:
     }
 
     //! Copy new object to the vector
-    [[nodiscard]] constexpr bool push_back(const _T& f_object) noexcept {
+    [[nodiscard]] constexpr bool push_back(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         auto* self = root();
 
-        if (false == fits(1U)) [[unlikely]] {
+        if (false == fits(1U)) {
             return false;
         }
 
         //Copy construct the object
         new (self->m_finish++) _T(f_object);
 
-        return true;
+        [[likely]] return true;
     }
 
-    //! Move new object into the vector
-    [[nodiscard]] constexpr bool emplace_back(_T&& f_object) noexcept {
+    //! Move construct new object into the vector
+    [[nodiscard]] constexpr bool emplace_back(_T&& f_object) noexcept
+        requires(__is_nothrow_constructible(_T, _T &&))
+    {
         auto* self = root();
 
-        if (false == fits(1U)) [[unlikely]] {
+        if (false == fits(1U)) {
             return false;
         }
 
         //Move construct the object
         new (self->m_finish++) _T(static_cast<_T&&>(f_object));
 
-        return true;
+        [[likely]] return true;
     }
 
-    //! Move new object into the vector
+    //! Custom construct new object into the vector
     template <typename... _Args>
-    [[nodiscard]] constexpr bool emplace_back(_Args... f_args) noexcept {
+    [[nodiscard]] constexpr bool emplace_back(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
         auto* self = root();
 
-        if (false == fits(1U)) [[unlikely]] {
+        if (false == fits(1U)) {
             return false;
         }
 
         //Move construct the object
         new (self->m_finish++) _T(skl_fwd<_Args>(f_args)...);
 
-        return true;
+        [[likely]] return true;
     }
 
-    //! Move new object into the vector
+    //! Copy new object to the vector
+    //! \remark asserts(fits(1U))
+    constexpr void push_back_checked(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
+        auto* self = root();
+
+        SKL_ASSERT_CRITICAL(fits(1U));
+
+        //Copy construct the object
+        new (self->m_finish++) _T(f_object);
+    }
+
+    //! Move construct new object into the vector
+    //! \remark asserts(fits(1U))
+    constexpr void emplace_back_checked(_T&& f_object) noexcept
+        requires(__is_nothrow_constructible(_T, _T &&))
+    {
+        auto* self = root();
+
+        SKL_ASSERT_CRITICAL(fits(1U));
+
+        //Move construct the object
+        new (self->m_finish++) _T(static_cast<_T&&>(f_object));
+    }
+
+    //! Custom construct new object into the vector
+    //! \remark asserts(fits(1U))
     template <typename... _Args>
-    constexpr void emplace_back_checked(_Args... f_args) noexcept {
+    constexpr void emplace_back_checked(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
         auto* self = root();
 
         SKL_ASSERT_CRITICAL(fits(1U));
@@ -127,7 +154,8 @@ public:
 
     //! Remove the last object
     constexpr void pop_back() noexcept {
-        SKL_ASSERT(0U < size());
+        SKL_ASSERT_CRITICAL(0U < size());
+
         auto* self = root();
 
         --self->m_finish;
@@ -139,13 +167,13 @@ public:
 
     //! operator[]
     [[nodiscard]] constexpr _T& operator[](u64 f_index) noexcept {
-        SKL_ASSERT(f_index < size());
+        SKL_ASSERT_CRITICAL(f_index < size());
         return data()[f_index];
     }
 
     //! operator[]
     [[nodiscard]] constexpr const _T& operator[](u64 f_index) const noexcept {
-        SKL_ASSERT(f_index < size());
+        SKL_ASSERT_CRITICAL(f_index < size());
         return data()[f_index];
     }
 
@@ -156,19 +184,19 @@ public:
 
     //! Get ref to the last element in the vector
     [[nodiscard]] constexpr _T& back() noexcept {
-        SKL_ASSERT(0U < size());
+        SKL_ASSERT_CRITICAL(0U < size());
         return *(root()->m_finish - 1U);
     }
 
     //! Get ref to the last element in the vector
     [[nodiscard]] constexpr const _T& back() const noexcept {
-        SKL_ASSERT(0U < size());
+        SKL_ASSERT_CRITICAL(0U < size());
         return *(root()->m_finish - 1U);
     }
 
     //! Get ref to the first element in the vector
     [[nodiscard]] constexpr _T& front() noexcept {
-        SKL_ASSERT(0U < size());
+        SKL_ASSERT_CRITICAL(0U < size());
         return *root()->m_start;
     }
 
@@ -200,7 +228,9 @@ public:
 
     //! Find \p f_target in this vector
     //! \returns end() if item is not found
-    [[nodiscard]] constexpr _T* find(_T f_value) noexcept {
+    [[nodiscard]] constexpr _T* find(_T f_value) noexcept
+        requires(__is_trivially_copyable(_T))
+    {
         for (auto& it : *this) {
             if (it == f_value) {
                 return &it;
@@ -212,7 +242,9 @@ public:
 
     //! Find \p f_target in this vector
     //! \returns end() if item is not found
-    [[nodiscard]] constexpr const _T* find(_T f_value) const noexcept {
+    [[nodiscard]] constexpr const _T* find(_T f_value) const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
         for (auto& it : *this) {
             if (it == f_value) {
                 return &it;
@@ -230,8 +262,8 @@ public:
     //! });
     //!
     //! \returns end() if item is not found
-    template <typename _TFunctor>
-    [[nodiscard]] constexpr const _T* find_if(const _TFunctor& f_predicate) const noexcept {
+    template <typename _Functor>
+    [[nodiscard]] constexpr const _T* find_if(const _Functor& f_predicate) const {
         for (auto& it : *this) {
             if (f_predicate(it)) {
                 return &it;
@@ -249,8 +281,8 @@ public:
     //! });
     //!
     //! \returns end() if item is not found
-    template <typename _TFunctor>
-    [[nodiscard]] constexpr _T* find_if(const _TFunctor& f_predicate) noexcept {
+    template <typename _Functor>
+    [[nodiscard]] constexpr _T* find_if(const _Functor& f_predicate) {
         for (auto& it : *this) {
             if (f_predicate(it)) {
                 return &it;
@@ -268,10 +300,10 @@ public:
     //! })>();
     //!
     //! \returns end() if item is not found
-    template <typename _TStaticFunctor>
-    [[nodiscard]] constexpr const _T* find_if_static() const noexcept {
+    template <typename _StaticFunctor>
+    [[nodiscard]] constexpr const _T* find_if_static() const {
         for (auto& it : *this) {
-            if (_TStaticFunctor::operator()(it)) {
+            if (_StaticFunctor::operator()(it)) {
                 return &it;
             }
         }
@@ -287,10 +319,10 @@ public:
     //! })>();
     //!
     //! \returns end() if item is not found
-    template <typename _TStaticFunctor>
-    [[nodiscard]] constexpr _T* find_if_static() noexcept {
+    template <typename _StaticFunctor>
+    [[nodiscard]] constexpr _T* find_if_static() {
         for (auto& it : *this) {
-            if (_TStaticFunctor::operator()(it)) {
+            if (_StaticFunctor::operator()(it)) {
                 return &it;
             }
         }
@@ -298,14 +330,14 @@ public:
         return end();
     }
 
-    //! Reserve a portion/all of the remaining fixed buffer
+    //! Increase size by \p f_count
     //! \remark asserts true == fits(f_count)
-    constexpr void reserve(u64 f_count) noexcept {
+    constexpr void grow(u64 f_count) noexcept(__is_nothrow_constructible(_T)) {
         SKL_ASSERT(fits(f_count));
         auto* new_finish = root()->m_finish + f_count;
 
         //Default construct all reserved objects if necessary
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_constructible(_T)) {
             for (auto* cursor = root()->m_finish; cursor != new_finish; ++cursor) {
                 new (cursor) _T();
             }
@@ -314,12 +346,12 @@ public:
         root()->m_finish = new_finish;
     }
 
-    //! Unreserve a portion/all of the buffer
-    //! \remark asserts true == fits(f_count)
-    constexpr void unreserve(u64 f_count) noexcept
-        requires(__is_trivial(_T))
+    //! Shring the vector by \p f_count
+    //! \remark asserts size() >= f_count
+    constexpr void shrink(u64 f_count) noexcept
+        requires(__is_trivially_destructible(_T))
     {
-        SKL_ASSERT(size() >= f_count);
+        SKL_ASSERT_CRITICAL(size() >= f_count);
         root()->m_finish -= f_count;
     }
 
@@ -327,8 +359,8 @@ public:
     //! \returns SKL_ERR_NOT_UNIQUE if value is not unique
     //! \returns SKL_ERR_FAIL if no space for the value
     //! \returns SKL_SUCCESS otherwise, value is unique and added
-    [[nodiscard]] constexpr skl_status add_if_unique(_T f_value) noexcept
-        requires(__is_trivial(_T))
+    [[nodiscard]] constexpr skl_status add_if_unique(_T f_value) noexcept(__is_nothrow_constructible(_T, const _T&))
+        requires(__is_trivially_copyable(_T))
     {
         const auto* existing = find(f_value);
         if (nullptr != existing) {
@@ -349,12 +381,12 @@ public:
     //! \remark If a backswap is performed and void != _StaticFunctor, \p _StaticFunctor::operator()(...) is called
     //! \remark _StaticFunctor must be a static functor of type void(_T, u64 f_new_index) noexcept;
     template <typename _StaticFunctor = void>
-    constexpr void back_swap_erase(u64 f_index) noexcept {
+    constexpr void back_swap_erase(u64 f_index) {
         const auto _size = size();
-        SKL_ASSERT(f_index < _size);
+        SKL_ASSERT_CRITICAL(f_index < _size);
 
         //1. Destroy the erased object if not trivial
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             (*this)[f_index].~_T();
         }
 
@@ -362,7 +394,7 @@ public:
         if ((_size > 1U) && (f_index < (_size - 1U))) {
             auto* last = root()->m_finish - 1U;
 
-            if constexpr (false == __is_trivial(_T)) {
+            if constexpr (false == __is_trivially_constructible(_T, _T&&)) {
                 //Move the last item into the erased slot
                 new (&(*this)[f_index]) _T(static_cast<_T&&>(*last));
             } else {
@@ -378,7 +410,7 @@ public:
             }
 
             //3. Destroy the last element if needed
-            if constexpr (false == __is_trivial(_T)) {
+            if constexpr (false == __is_trivially_destructible(_T)) {
                 last->~_T();
             }
         }

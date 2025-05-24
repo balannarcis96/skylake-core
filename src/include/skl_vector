@@ -31,8 +31,6 @@ public:
     using type                            = _T;
     using size_t                          = u64;
 
-    static constexpr bool IsTypeNoThrowDestructible = noexcept(static_cast<_T*>(nullptr)->~_T());
-
     skl_vector() noexcept {
         initialize(_InitialCapacity);
     }
@@ -41,29 +39,33 @@ public:
         initialize(f_initial_capacity);
     }
 
-    skl_vector(const skl_vector& f_other) noexcept {
+    skl_vector(const skl_vector& f_other) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         copy<true>(f_other);
     }
 
-    skl_vector& operator=(const skl_vector& f_other) noexcept {
+    skl_vector& operator=(const skl_vector& f_other) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         SKL_ASSERT(this != &f_other);
         copy<false>(f_other);
         return *this;
     }
 
-    skl_vector(skl_vector&& f_other) noexcept {
+    skl_vector(skl_vector&& f_other) noexcept
+        requires(__is_nothrow_constructible(_T, _T &&) && (__is_nothrow_destructible(_T)))
+    {
         move<true>(static_cast<skl_vector&&>(f_other));
     }
 
-    skl_vector& operator=(skl_vector&& f_other) noexcept {
+    skl_vector& operator=(skl_vector&& f_other) noexcept
+        requires(__is_nothrow_constructible(_T, _T &&) && (__is_nothrow_destructible(_T)))
+    {
         SKL_ASSERT(this != &f_other);
         move<false>(static_cast<skl_vector&&>(f_other));
         return *this;
     }
 
-    ~skl_vector() noexcept {
-        if (m_start) {
-            if constexpr (false == __is_trivial(_T)) {
+    ~skl_vector() noexcept(__is_nothrow_destructible(_T)) {
+        if (nullptr != m_start) {
+            if constexpr (false == __is_trivially_destructible(_T)) {
                 destruct_objects();
             }
 
@@ -116,21 +118,19 @@ public:
 
     //! operator[]
     [[nodiscard]] _T& operator[](u64 f_index) noexcept {
-        SKL_ASSERT(valid());
-        SKL_ASSERT(f_index < size());
-        return data()[f_index];
+        SKL_ASSERT(valid() && (f_index < size()));
+        return m_start[f_index];
     }
 
     //! operator[]
     [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
-        SKL_ASSERT(valid());
-        SKL_ASSERT(f_index < size());
-        return data()[f_index];
+        SKL_ASSERT(valid() && (f_index < size()));
+        return m_start[f_index];
     }
 
     //! Clear the vector, destroying all objects if needed
-    void clear() noexcept {
-        if constexpr (false == __is_trivial(_T)) {
+    void clear() noexcept(__is_nothrow_destructible(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             destruct_objects();
         }
 
@@ -174,9 +174,8 @@ private:
         SKL_ASSERT_CRITICAL(nullptr != m_start);
     }
 
-    template <typename = _T>
-    void destruct_objects() noexcept
-        requires((false == __is_trivial(_T)) && IsTypeNoThrowDestructible)
+    void destruct_objects() noexcept(__is_nothrow_destructible(_T))
+        requires(false == __is_trivially_destructible(_T))
     {
         for (u64 i = 0U; i < size(); ++i) {
             m_start[i].~_T();
@@ -184,7 +183,7 @@ private:
     }
 
     template <bool _IsForCtor>
-    void copy(const skl_vector& f_other) noexcept {
+    void copy(const skl_vector& f_other) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         const auto other_size = f_other.size();
 
         //Preapre the target buffer
@@ -194,7 +193,7 @@ private:
             clear();
 
             if (capacity() < other_size) {
-                //We need bigger buffer
+                //We need a bigger buffer
                 free_buffer();
                 initialize(f_other.capacity(), other_size);
             } else {
@@ -204,7 +203,7 @@ private:
         }
 
         //Perform the copy
-        if constexpr (__is_trivial(_T)) {
+        if constexpr (__is_trivially_copyable(_T)) {
             skl_vector_memcpy(data(), f_other.data(), sizeof(_T) * other_size);
         } else {
             for (u64 i = 0U; i < other_size; ++i) {
@@ -214,11 +213,13 @@ private:
     }
 
     template <bool _IsForCtor>
-    void move(skl_vector&& f_other) noexcept {
+    void move(skl_vector&& f_other) noexcept
+        requires(__is_nothrow_constructible(_T, _T &&) && (__is_nothrow_destructible(_T)))
+    {
         //Clear current vector if needed
         if constexpr (false == _IsForCtor) {
             if (nullptr != m_start) {
-                if constexpr (false == __is_trivial(_T)) {
+                if constexpr (false == __is_trivially_destructible(_T)) {
                     destruct_objects();
                 }
 

@@ -59,6 +59,6 @@ Eg. using compiler intrinsics directly in the implementation, including os heade
 
 |Language      | files | blank | comment | code |
 |--------------|-------|-------|---------|------|
-| C++          | 25    | 498   | 259     | 2002 |
-| C/C++ Header | 4     | 61    | 70      | 248  |
-| SUM:         | 29    | 550   | 329     | 2250 |
+| C++          | 24    | 501   | 261     | 2055 |
+| C/C++ Header | 4     | 61    | 70      | 257  |
+| SUM:         | 28    | 562   | 331     | 2312 |

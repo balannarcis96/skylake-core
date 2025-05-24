@@ -64,7 +64,7 @@ public:
     //! Set the size of the vector to \p f_new_size, allocates if necessary
     //! \remark Objects are destroyed or default constructed as needed
     //! \remark resize(0U) is same as clear()
-    void resize(const u64 f_new_size) noexcept {
+    void resize(const u64 f_new_size) {
         SKL_ASSERT(valid());
 
         if (f_new_size == 0U) {
@@ -79,29 +79,26 @@ public:
             increase_buffer(f_new_size + CVectorIncreaseStep);
         }
 
-        //Adjust pointers
-        root()->m_finish = root()->m_start + f_new_size;
-
-        //Destroy/construct objects if needed
-        if constexpr (false == __is_trivial(_T)) {
-            if (old_size > size()) {
-                const auto delta = old_size - size();
-                //Destroy the cleared objects (if any)
-                for (u64 i = 0U; i < delta; ++i) {
-                    (root()->m_start - i + (old_size - 1U))->~_T();
-                }
-            } else {
-                const auto delta = size() - old_size;
-                //Default construct the new objects (if any)
-                for (u64 i = 0U; i < delta; ++i) {
-                    new (root()->m_start + i + old_size) _T();
-                }
+        //Destroy objects if needed
+        if constexpr (false == __is_trivially_destructible(_T)) {
+            for (u64 i = f_new_size; i < old_size; ++i) {
+                root()->m_start[i].~_T();
             }
         }
+
+        //Construct objects if needed
+        if constexpr (false == __is_trivially_constructible(_T)) {
+            for (u64 i = old_size; i < f_new_size; ++i) {
+                new (root()->m_start + i) _T();
+            }
+        }
+
+        //Adjust size
+        root()->m_finish = root()->m_start + f_new_size;
     }
 
     //! Reserve at least \p f_min_capacity in the internal buffer
-    void reserve(const u64 f_min_capacity) noexcept {
+    void reserve(const u64 f_min_capacity) {
         SKL_ASSERT(valid());
         SKL_ASSERT(0U < f_min_capacity);
 
@@ -112,8 +109,8 @@ public:
         increase_buffer(f_min_capacity + CVectorIncreaseStep);
     }
 
-    //! Copy new object to the vector
-    void push_back(const _T& f_object) noexcept {
+    //! Copy new object into the vector front
+    void push_back(const _T& f_object) {
         SKL_ASSERT(valid());
         auto* self = root();
 
@@ -126,7 +123,7 @@ public:
     }
 
     //! Move new object into the vector
-    void emplace_back(_T&& f_object) noexcept {
+    void emplace_back(_T&& f_object) {
         SKL_ASSERT(valid());
         auto* self = root();
 
@@ -139,13 +136,13 @@ public:
     }
 
     //! Remove the last object
-    void pop_back() noexcept {
+    void pop_back() noexcept(__is_nothrow_destructible(_T)) {
         SKL_ASSERT(0U < size());
         auto* self = root();
 
         --self->m_finish;
 
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             self->m_finish->~_T();
         }
     }
@@ -250,7 +247,7 @@ public:
     //!
     //! \returns end() if item is not found
     template <typename _TFunctor>
-    [[nodiscard]] const _T* find_if(const _TFunctor& f_predicate) const noexcept {
+    [[nodiscard]] const _T* find_if(const _TFunctor& f_predicate) const {
         for (auto& it : *this) {
             if (f_predicate(it)) {
                 return &it;
@@ -269,7 +266,7 @@ public:
     //!
     //! \returns end() if item is not found
     template <typename _TFunctor>
-    [[nodiscard]] _T* find_if(const _TFunctor& f_predicate) noexcept {
+    [[nodiscard]] _T* find_if(const _TFunctor& f_predicate) {
         for (auto& it : *this) {
             if (f_predicate(it)) {
                 return &it;
@@ -288,7 +285,7 @@ public:
     //!
     //! \returns end() if item is not found
     template <typename _TStaticFunctor>
-    [[nodiscard]] const _T* find_if_static() const noexcept {
+    [[nodiscard]] const _T* find_if_static() const {
         for (auto& it : *this) {
             if (_TStaticFunctor::operator()(it)) {
                 return &it;
@@ -307,7 +304,7 @@ public:
     //!
     //! \returns end() if item is not found
     template <typename _TStaticFunctor>
-    [[nodiscard]] _T* find_if_static() noexcept {
+    [[nodiscard]] _T* find_if_static() {
         for (auto& it : *this) {
             if (_TStaticFunctor::operator()(it)) {
                 return &it;
@@ -320,7 +317,7 @@ public:
     //! Erases the element at \p f_index
     //! \remark Asserts that \p f_index < size()
     //! \remark If the size() > 1 and f_index is not the last element, the last element is moved to the erased slot
-    void back_swap_erase(u64 f_index) noexcept {
+    void back_swap_erase(u64 f_index) noexcept(__is_nothrow_destructible(_T) && __is_nothrow_constructible(_T, _T&&)) {
         const auto _size = size();
         SKL_ASSERT(f_index < _size);
 
@@ -335,7 +332,7 @@ public:
             new (&(*this)[f_index]) _T(static_cast<_T&&>(*last));
 
             //3. Destroy the last element if needed
-            if constexpr (false == __is_trivial(_T)) {
+            if constexpr (false == __is_trivially_destructible(_T)) {
                 last->~_T();
             }
         }
@@ -345,7 +342,7 @@ public:
     }
 
 private:
-    SKL_NOINLINE void increase_buffer(u64 f_new_capacity) noexcept {
+    SKL_NOINLINE void increase_buffer(u64 f_new_capacity) {
         SKL_ASSERT(valid());
 
         auto* self = root();
@@ -361,7 +358,7 @@ private:
         auto* new_buffer = self->m_start;
 
         //Copy or move existing objects into the new buffer (if any)
-        if constexpr (__is_trivial(_T)) {
+        if constexpr (__is_trivially_copyable(_T)) {
             skl_vector_memcpy(new_buffer, old_buffer, old_size * sizeof(_T));
         } else {
             if constexpr (is_move_constructible<_T>()) {
@@ -369,12 +366,16 @@ private:
                     new (&new_buffer[i]) _T(static_cast<_T&&>(old_buffer[i]));
                 }
             } else {
-                for (u64 i = 0U; i < size(); ++i) {
-                    new (&new_buffer[i]) _T(old_buffer[i]);
+                if constexpr (false == __is_trivially_constructible(_T)) {
+                    for (u64 i = 0U; i < size(); ++i) {
+                        new (&new_buffer[i]) _T(old_buffer[i]);
+                    }
                 }
 
-                for (u64 i = 0U; i < size(); ++i) {
-                    old_buffer[i].~_T();
+                if constexpr (false == __is_trivially_destructible(_T)) {
+                    for (u64 i = 0U; i < size(); ++i) {
+                        old_buffer[i].~_T();
+                    }
                 }
             }
         }

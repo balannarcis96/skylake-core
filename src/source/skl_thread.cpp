@@ -30,7 +30,7 @@ namespace {
         SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Failed to get the available cpu indices!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
         return SKL_ERR_FAIL;
     }
-    available_cpus.upgrade().reserve(cpus_count.value());
+    available_cpus.upgrade().grow(cpus_count.value());
 
     if (f_cpu_index_range.first < 0 || f_cpu_index_range.second < 0) {
         //Allow the thread on all available cores
