@@ -14,7 +14,7 @@ using skl_status_raw = int;
 constexpr skl_status_raw SKL_CUSTOM_ERR_MAX = -10000;
 
 //All core statuses
-enum skl_core_statuses : skl_status_raw {
+enum ESklCoreStatus : skl_status_raw {
     //Error statuses
     SKL_ERR_CORRUPT    = -33,
     SKL_ERR_CONFIG     = -32,
@@ -80,8 +80,8 @@ struct skl_status {
     [[nodiscard]] static constexpr skl_status success() noexcept { return SKL_SUCCESS; }
     [[nodiscard]] static constexpr skl_status fail() noexcept { return SKL_ERR_FAIL; }
     [[nodiscard]] static constexpr skl_status from_bool(bool f_value) noexcept { return f_value ? SKL_SUCCESS : SKL_ERR_FAIL; }
-    [[nodiscard]] constexpr bool              operator==(const skl_core_statuses f_status) const noexcept { return m_status == static_cast<skl_status_raw>(f_status); }
-    [[nodiscard]] constexpr bool              operator!=(const skl_core_statuses f_status) const noexcept { return m_status != static_cast<skl_status_raw>(f_status); }
+    [[nodiscard]] constexpr bool              operator==(const ESklCoreStatus f_status) const noexcept { return m_status == static_cast<skl_status_raw>(f_status); }
+    [[nodiscard]] constexpr bool              operator!=(const ESklCoreStatus f_status) const noexcept { return m_status != static_cast<skl_status_raw>(f_status); }
     [[nodiscard]] constexpr bool              operator==(const skl_status& f_other) const noexcept { return m_status == f_other.m_status; }
     [[nodiscard]] constexpr bool              operator!=(const skl_status& f_other) const noexcept { return !(*this == f_other); }
     [[nodiscard]] constexpr bool              is_custom() const noexcept { return (m_status >= SKL_CUSTOM_SUCCESS_MIN) || (m_status <= SKL_CUSTOM_ERR_MAX); }
@@ -104,9 +104,9 @@ private:
     skl_status_raw m_status;
 };
 
-[[nodiscard]] constexpr bool operator==(const skl_core_statuses f_left, const skl_status f_status) noexcept {
+[[nodiscard]] constexpr bool operator==(const ESklCoreStatus f_left, const skl_status f_status) noexcept {
     return static_cast<skl_status_raw>(f_left) == f_status.raw();
 }
-[[nodiscard]] constexpr bool operator!=(const skl_core_statuses f_left, const skl_status f_status) noexcept {
+[[nodiscard]] constexpr bool operator!=(const ESklCoreStatus f_left, const skl_status f_status) noexcept {
     return static_cast<skl_status_raw>(f_left) != f_status.raw();
 }

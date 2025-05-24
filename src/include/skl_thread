@@ -70,12 +70,15 @@ public:
     //! \param CPUIndexRange 0 based index of cores this thread is to be scheduled on(globally indexed)
     //! \note CPUIndexRange - (-1, -1) = any core/no affinity - default
     //! \note CPUIndexRange - (x, x) = same index in range to force scheduling on a spcific core
-    [[nodiscard]] static skl_status set_affinity(thread_affinity_t f_cpu_index_range) noexcept;
+    //! \returns SKL_ERR_PARAMS if the given parameters are invalid
+    //! \returns SKL_ERR_FAIL if internal error occurs
+    //! \returns SKL_ERR_STATE if the given cpu index/indices/range contains cpu indices that are not availale for this process
+    [[nodiscard]] static skl_status set_thread_affinity(thread_affinity_t f_cpu_index_range) noexcept;
 
     //! Get the set of cpu indices the process is allowed to use
     //! \returns SKL_ERR_FAIL if failed to get the core count or affinity mask
     //! \returns SKL_ERR_OVERFLOW if \p f_core_indices_buffer does not fit the available core indices count
-    [[nodiscard]] static skl_result<u16> get_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept;
+    [[nodiscard]] static skl_result<u16> get_process_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept;
 
     //! Join this thread
     [[nodiscard]] skl_status join() noexcept;

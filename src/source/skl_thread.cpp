@@ -11,32 +11,54 @@
 #include "skl_thread"
 #include "skl_log"
 #include "skl_core"
+#include "skl_magic_enum"
+#include "skl_fixed_vector_if"
 
 namespace {
-[[nodiscard]] bool set_thread_affinity_impl(skl::thread_t f_handle, skl::pair<i16, i16> f_cpu_index_range) noexcept {
+[[nodiscard]] skl_status set_thread_affinity_impl(skl::thread_t f_handle, skl::pair<i16, i16> f_cpu_index_range) noexcept {
     if (f_handle == skl::CInvalidThreadHandle) {
         SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Invalid thread handle!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
-        return false;
+        return SKL_ERR_PARAMS;
     }
 
     cpu_set_t set;
     CPU_ZERO(&set);
 
+    skl::skl_fixed_vector<u16, 1024U> available_cpus{};
+    const auto                        cpus_count = skl::SKLThread::get_process_usable_cores(available_cpus.data(), available_cpus.capacity());
+    if (cpus_count.is_failure()) {
+        SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Failed to get the available cpu indices!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+        return SKL_ERR_FAIL;
+    }
+    available_cpus.upgrade().reserve(cpus_count.value());
+
     if (f_cpu_index_range.first < 0 || f_cpu_index_range.second < 0) {
-        const long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
-        for (long cpu_index = 0; cpu_index < nprocs; ++cpu_index) {
+        //Allow the thread on all available cores
+        for (const auto cpu_index : available_cpus) {
             CPU_SET(cpu_index, &set);
         }
     } else {
         if (f_cpu_index_range.first > f_cpu_index_range.second) {
             SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Invalid cpu index range!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
-            return false;
+            return SKL_ERR_PARAMS;
         }
 
         if (f_cpu_index_range.first == f_cpu_index_range.second) {
+            const auto* available = available_cpus.upgrade().find(u16(f_cpu_index_range.first));
+            if (nullptr == available) {
+                SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Given cpu indices are not available to be used by this process!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+                return SKL_ERR_STATE;
+            }
+
             CPU_SET(f_cpu_index_range.first, &set);
         } else {
             for (i32 cpu_index = f_cpu_index_range.first; cpu_index <= f_cpu_index_range.second; ++cpu_index) {
+                const auto* available = available_cpus.upgrade().find(u16(cpu_index));
+                if (nullptr == available) {
+                    SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Not all cpu indices in the interval are available to be used by this process!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
+                    return SKL_ERR_STATE;
+                }
+
                 CPU_SET(cpu_index, &set);
             }
         }
@@ -45,10 +67,10 @@ namespace {
     const auto result = ::pthread_setaffinity_np(f_handle, sizeof(cpu_set_t), &set);
     if (0 != result) {
         SWARNING_LOCAL("set_thread_affinity_impl({}, {}, {}) Failed!", f_handle, f_cpu_index_range.first, f_cpu_index_range.second);
-        return false;
+        return SKL_ERR_FAIL;
     }
 
-    return true;
+    return SKL_SUCCESS;
 }
 } // namespace
 
@@ -134,8 +156,13 @@ skl_status SKLThread::create(thread_affinity_t f_cpu_index_range) noexcept {
     }
 
     //Set affinity
-    if (false == set_thread_affinity_impl(new_handle, f_cpu_index_range)) {
-        SERROR_LOCAL("SKLThread::Create() Failed to set new thread affinity Range[{} {}]!", f_cpu_index_range.first, f_cpu_index_range.second);
+    const auto set_affinity_result = set_thread_affinity_impl(new_handle, f_cpu_index_range);
+    if (set_affinity_result.is_failure()) {
+        SERROR_LOCAL("SKLThread::Create() Failed to set new thread affinity Range[{} {}] Err: {{{}|{}}}!",
+                     f_cpu_index_range.first,
+                     f_cpu_index_range.second,
+                     set_affinity_result.raw(),
+                     enum_to_string(set_affinity_result.raw_as_enum<ESklCoreStatus>()));
 
         //Set start failed. Stop early.
         (void)m_bRun.exchange(false);
@@ -164,11 +191,11 @@ skl_status SKLThread::create(thread_affinity_t f_cpu_index_range) noexcept {
     return SKL_SUCCESS;
 }
 
-skl_status SKLThread::set_affinity(thread_affinity_t f_cpu_index_range) noexcept {
-    return skl_status::from_bool(set_thread_affinity_impl(pthread_self(), f_cpu_index_range));
+skl_status SKLThread::set_thread_affinity(thread_affinity_t f_cpu_index_range) noexcept {
+    return set_thread_affinity_impl(pthread_self(), f_cpu_index_range);
 }
 
-skl_result<u16> SKLThread::get_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept {
+skl_result<u16> SKLThread::get_process_usable_cores(u16* f_core_indices_buffer, u16 f_max_indices) noexcept {
     if ((nullptr == f_core_indices_buffer) || (0U == f_max_indices)) {
         return skl_fail{SKL_ERR_PARAMS};
     }
