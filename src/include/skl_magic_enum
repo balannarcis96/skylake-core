@@ -15,19 +15,23 @@
 
 namespace skl {
 //! Get the string for a given enum entry
-constexpr const char* enum_to_string(auto f_enum_value) noexcept {
-    return magic_enum::enum_name(f_enum_value).data();
+//! \return empty view if the \p f_enum_value is not a valid enum entry
+constexpr skl_string_view enum_to_string(auto f_enum_value) noexcept {
+    return skl_string_view::from_std(magic_enum::enum_name(f_enum_value));
 }
+
 //! Get the enum value given a cstring
 template <typename TEnum>
 constexpr std::optional<TEnum> enum_from_string(const char* f_string) noexcept {
     return magic_enum::enum_cast<TEnum>(f_string);
 }
+
 //! Get the enum value given a string view
 template <typename TEnum>
 constexpr std::optional<TEnum> enum_from_string(skl_string_view f_string) noexcept {
     return magic_enum::enum_cast<TEnum>(f_string.std<std::string_view>());
 }
+
 //! Get the enum value given a string view
 template <typename TEnum>
 constexpr std::optional<TEnum> enum_from_string(std::string_view f_string) noexcept {

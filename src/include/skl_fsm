@@ -718,7 +718,7 @@ public:
         m_ops.m_state.reset(0U);
 
         if constexpr (CImplHasResetHandler) {
-            m_ops.on_fsm_reset();
+            m_ops.fsm_on_reset();
         }
     }
 

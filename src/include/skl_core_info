@@ -1,0 +1,16 @@
+//!
+//! \file skl_core_info
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_fixed_vector"
+
+namespace skl {
+using cpu_indices_t = skl::skl_fixed_vector<u16, 1024U>;
+
+//! [ThreadSafe, LibInit] Get the set of the usable cpus
+//! \returns empty vector if the library was not successfully initializedd
+[[nodiscard]] const cpu_indices_t& skl_core_get_available_cpus() noexcept;
+} // namespace skl

@@ -117,6 +117,12 @@ public:
         return _StringView(m_str, m_len);
     }
 
+    //! Construct from a given buffer std::string_view
+    template <typename _StringView>
+    [[nodiscard]] static constexpr skl_string_view from_std(_StringView f_std_view) noexcept {
+        return skl_string_view{f_std_view.data(), f_std_view.length()};
+    }
+
     //! Get the length of the string
     [[nodiscard]] constexpr size_type length() const noexcept { return m_len; }
 

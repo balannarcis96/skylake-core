@@ -80,11 +80,14 @@ struct skl_status {
     [[nodiscard]] static constexpr skl_status success() noexcept { return SKL_SUCCESS; }
     [[nodiscard]] static constexpr skl_status fail() noexcept { return SKL_ERR_FAIL; }
     [[nodiscard]] static constexpr skl_status from_bool(bool f_value) noexcept { return f_value ? SKL_SUCCESS : SKL_ERR_FAIL; }
+    [[nodiscard]] constexpr bool              to_bool() const noexcept { return is_success(); }
     [[nodiscard]] constexpr bool              operator==(const ESklCoreStatus f_status) const noexcept { return m_status == static_cast<skl_status_raw>(f_status); }
     [[nodiscard]] constexpr bool              operator!=(const ESklCoreStatus f_status) const noexcept { return m_status != static_cast<skl_status_raw>(f_status); }
     [[nodiscard]] constexpr bool              operator==(const skl_status& f_other) const noexcept { return m_status == f_other.m_status; }
     [[nodiscard]] constexpr bool              operator!=(const skl_status& f_other) const noexcept { return !(*this == f_other); }
     [[nodiscard]] constexpr bool              is_custom() const noexcept { return (m_status >= SKL_CUSTOM_SUCCESS_MIN) || (m_status <= SKL_CUSTOM_ERR_MAX); }
+
+    [[nodiscard]] const char* to_string() const noexcept;
 
     [[nodiscard]] constexpr bool is_failure(skl_status f_specific_fail_status) const noexcept {
         return is_failure() && (m_status == f_specific_fail_status.m_status);

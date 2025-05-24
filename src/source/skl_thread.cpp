@@ -162,7 +162,7 @@ skl_status SKLThread::create(thread_affinity_t f_cpu_index_range) noexcept {
                      f_cpu_index_range.first,
                      f_cpu_index_range.second,
                      set_affinity_result.raw(),
-                     enum_to_string(set_affinity_result.raw_as_enum<ESklCoreStatus>()));
+                     set_affinity_result.to_string());
 
         //Set start failed. Stop early.
         (void)m_bRun.exchange(false);

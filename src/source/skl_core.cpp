@@ -9,10 +9,16 @@
 #include "skl_signal"
 #include "skl_assert"
 #include "skl_atomic"
+#include "skl_fixed_vector_if"
+#include "skl_core_info"
+#include "skl_thread"
 
 namespace {
 //Is the skl core initialized on the current thread
 thread_local bool g_is_skl_core_init_on_thread{false};
+
+//Set of available cores
+skl::cpu_indices_t g_skl_core_cpu_indices{};
 
 //Is the skl core initialized
 SKL_CACHE_ALIGNED std::relaxed_value<bool> g_is_skl_core_init{false};
@@ -31,6 +37,11 @@ skl_status skl_core_init() noexcept {
     if (g_is_skl_core_init.exchange(true)) {
         return SKL_OK_REDUNDANT;
     }
+
+    const auto result = SKLThread::get_process_usable_cores(g_skl_core_cpu_indices.data(), g_skl_core_cpu_indices.capacity());
+    SKL_ASSERT_PERMANENT(result.is_success() && (result.value() > 0U));
+    auto& tmp = g_skl_core_cpu_indices.upgrade();
+    tmp.grow(result.value());
 
     SKL_ASSERT_PERMANENT(init_program_epilog().is_success());
 
@@ -93,5 +104,9 @@ skl_status skl_core_deinit() noexcept {
 
     puts("SKL_CORE_DEINIT!");
     return SKL_SUCCESS;
+}
+
+const cpu_indices_t& skl_core_get_available_cpus() noexcept {
+    return g_skl_core_cpu_indices;
 }
 } // namespace skl
