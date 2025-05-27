@@ -1,0 +1,40 @@
+name: Skylake Core CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    env:
+      CC: clang-19
+      CXX: clang++-19
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+           submodules: 'recursive'
+           fetch-depth: 0
+      
+      # self-hosted - has all of these tools
+      #- name: Install Tools
+      #  run: |
+      #    sudo apt-get update
+      #    sudo apt-get install -y clang-19 cmake ninja
+
+      - name: Configure
+        run: cmake -G Ninja -S . -B build \
+          -DCMAKE_C_COMPILER=$CC \
+          -DCMAKE_CXX_COMPILER=$CXX \
+          -DSKL_TUNE_PRESET=dev \ 
+          -DSKL_BUILD_TYPE=DEV    
+
+      - name: Build
+        run: cmake --build build -- -j$(nproc)
+
+      - name: Test
+        run: |
+          cd build
+          ctest --output-on-failure -j$(nproc)
