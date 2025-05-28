@@ -10,8 +10,8 @@
 #include "skl_rand"
 
 namespace skl {
-struct _ThreadId {
-    _ThreadId() noexcept {
+struct skl_core_thread_id_t {
+    skl_core_thread_id_t() noexcept {
         SklRand rand{};
         ThreadId = rand.next();
     }
@@ -19,21 +19,11 @@ struct _ThreadId {
     u32 ThreadId{0U};
 };
 } // namespace skl
-SKL_MAKE_TLS_SINGLETON(skl::_ThreadId, g_thread_id);
-static_assert(sizeof(skl::_ThreadId) <= 8U);
-
-namespace {
-SKL_NOINLINE void skl_thread_id_create() noexcept {
-    SKL_ASSERT_PERMANENT(g_thread_id::tls_create().is_success());
-}
-} // namespace
+SKL_MAKE_TLS_SINGLETON(skl::skl_core_thread_id_t, g_skl_core_thread_id);
+static_assert(sizeof(skl::skl_core_thread_id_t) <= 8U);
 
 namespace skl {
-unsigned int current_thread_id() noexcept {
-    if (false == g_thread_id::tls_init_status()) [[unlikely]] {
-        skl_thread_id_create();
-    }
-
-    return g_thread_id::tls_guarded().ThreadId;
+thread_id_t current_thread_id() noexcept {
+    return g_skl_core_thread_id::tls_guarded().ThreadId;
 }
 } // namespace skl

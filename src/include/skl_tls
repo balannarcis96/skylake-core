@@ -99,17 +99,17 @@ public:
     //! \remark Only valid if _StaticLifecycle = false
     //! \remark Must call destroy() when not needed anymore
     template <typename... _Args>
-    SKL_NOINLINE [[nodiscard]] static skl_status tls_create(_Args... f_arg) noexcept {
+    SKL_NOINLINE [[nodiscard]] static skl_status tls_create(_Args... f_args) noexcept {
         if (tls_init_status()) {
             return SKL_OK_REDUNDANT;
         }
 
         if constexpr (bDoSmallBufferOpt) {
-            new (reinterpret_cast<void*>(&ThreadLocalValue)) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+            new (reinterpret_cast<void*>(&ThreadLocalValue)) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_args)...);
         } else {
             _ThreadLocalValue* new_object;
             if constexpr (false == _UseCoreAllocator) {
-                new_object = new _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+                new_object = new _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_args)...);
                 if (nullptr == new_object) {
                     return SKL_ERR_ALLOC;
                 }
@@ -118,7 +118,7 @@ public:
                 if (nullptr == new_object) {
                     return SKL_ERR_ALLOC;
                 }
-                new (new_object) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_arg)...);
+                new (new_object) _ThreadLocalValue(skl::skl_tls_internals::forward<_Args>(f_args)...);
             }
 
             SKL_ASSERT(ThreadLocalValue == 0U);

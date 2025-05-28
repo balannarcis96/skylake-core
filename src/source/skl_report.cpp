@@ -16,27 +16,27 @@
 #include "skl_report"
 #include "skl_report_read"
 
-struct SklReportQueueThreadData;
+struct skl_reportq_thread_data_t;
 
 namespace {
 //! Reports buffers lock
 skl::spin_lock_t g_report_buffers_lock{};
 
 //! All possible report buffer (1k threads max)
-skl::skl_fixed_vector<SklReportQueueThreadData*, 1024ULL> g_report_buffers{};
+skl::skl_fixed_vector<skl_reportq_thread_data_t*, 1024ULL> g_report_buffers{};
 
 //! Current read report buffer index
 u64 g_report_current_buffer_index{0ULL};
 } // namespace
 
-struct SklReportQueueThreadData {
+struct skl_reportq_thread_data_t {
     skl::spin_lock_t     lock{};
     skl::skl_buffer_view view{skl::array_size(buffer), buffer};
-    u32                  thread_id{0U};
+    skl::thread_id_t     thread_id{skl::CInvalidThreadId};
     byte                 buffer[skl::CSklReportingThreadBufferSize];
 };
 
-SKL_MAKE_TLS_SINGLETON_CORE(SklReportQueueThreadData, g_skl_reporting, SKL_CACHE_LINE_SIZE);
+SKL_MAKE_TLS_SINGLETON_CORE(skl_reportq_thread_data_t, g_skl_reporting, SKL_CACHE_LINE_SIZE);
 
 namespace {
 SKL_NOINLINE void skl_report_init_thread() noexcept {

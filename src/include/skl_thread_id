@@ -8,6 +8,12 @@
 #pragma once
 
 namespace skl {
-//! SAcquire the current thread's uuid
-[[nodiscard]] unsigned int current_thread_id() noexcept;
+//! Thread id type
+using thread_id_t = unsigned int;
+
+//! Invalid thread id
+constexpr thread_id_t CInvalidThreadId = 0U;
+
+//! Acquire the current thread's uuid
+[[nodiscard]] thread_id_t current_thread_id() noexcept;
 } // namespace skl
