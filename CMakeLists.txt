@@ -22,7 +22,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE STRING "" FORCE
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE STRING "" FORCE)
 
 # Update modules path
-set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules;${CMAKE_CURRENT_SOURCE_DIR}/cmake/tuning")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tuning")
 
 include(SkylakeTuning)
 include(SkylakeCoreOptions)
@@ -178,7 +179,11 @@ if(PROJECT_IS_TOP_LEVEL)
         enable_testing()
 
         # Add the gtest library
-        add_subdirectory(third_party/googletest)
+        if(NOT TARGET gtest)
+            set(BUILD_GMOCK OFF)
+            set(INSTALL_GTEST OFF)
+            add_subdirectory(third_party/googletest)
+        endif()
 
         # Add tests
         add_subdirectory(test)
