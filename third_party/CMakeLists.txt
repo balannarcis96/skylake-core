@@ -10,11 +10,5 @@ add_subdirectory("fmt")
 target_link_libraries(fmt PUBLIC -lc++ -lc++abi)
 target_compile_definitions(fmt PUBLIC FMT_USE_FULL_CACHE_DRAGONBOX=1)
 
-add_subdirectory("ya_getopt")
-
-if(SKL_ADD_GTEST_GMOCK)
-    add_subdirectory("googletest-1.14.0")
-endif()
-
 set(SKL_MIMALLOC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mimalloc" CACHE STRING "[MiMalloc path]" FORCE)
 set(SKL_MAGICENUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/magic_enum" CACHE STRING "[MagicEnum path]" FORCE)
