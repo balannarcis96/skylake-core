@@ -64,7 +64,7 @@ enum ESklCoreStatus : skl_status_raw {
 //All custom success statuses must start from this value (including)!
 constexpr skl_status_raw SKL_CUSTOM_SUCCESS_MIN = 10000;
 
-struct skl_status {
+struct [[nodiscard]] skl_status {
     constexpr skl_status(skl_status_raw value) noexcept
         : m_status(value) { }
 

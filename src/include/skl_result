@@ -32,7 +32,7 @@ struct skl_fail {
 };
 
 template <typename _Data>
-class skl_result {
+class [[nodiscard]] skl_result {
     static_assert(sizeof(_Data) > 0U, "If no data is required, use skl_status");
 
 public:
