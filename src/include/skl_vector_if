@@ -13,9 +13,13 @@
 
 namespace skl {
 //! [ATRP] Extended interface for skl_vector<T>
-template <typename _T>
+template <typename _T, u64 _InitialCapacity>
 class iskl_vector final {
 public:
+    using value_type = _T;
+    using size_type  = u64;
+    using atrp_type  = skl_vector<_T, _InitialCapacity>;
+
     //ATRP
     iskl_vector() noexcept                     = delete;
     ~iskl_vector() noexcept                    = delete;
@@ -159,6 +163,16 @@ public:
         SKL_ASSERT(valid());
         SKL_ASSERT(f_index < size());
         return data()[f_index];
+    }
+
+    //! Convert to the base vector interface
+    [[nodiscard]] operator atrp_type&() noexcept {
+        return *reinterpret_cast<atrp_type*>(this);
+    }
+
+    //! Convert to the base vector interface
+    [[nodiscard]] operator const atrp_type&() const noexcept {
+        return *reinterpret_cast<const atrp_type*>(this);
     }
 
     //! Clear the vector, destroying all objects if needed

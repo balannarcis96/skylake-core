@@ -9,6 +9,7 @@
 #include "skl_int"
 #include "skl_assert"
 #include "skl_traits/conditional_t"
+#include "skl_traits/placement_new"
 
 namespace skl {
 template <typename, u64, u64, bool, bool, bool>
@@ -41,10 +42,10 @@ public:
     static constexpr u64  Mask           = _FixedCapacity - 1U;
     static constexpr u64  Alignment      = _Alignment;
     static constexpr u64  ByteSize       = sizeof(_T) * Capacity;
-    using type                           = _T;
-    using size_t                         = u64;
+    using value_type                     = _T;
+    using size_type                      = u64;
     using storage_t                      = conditional_t<_UseHeepStorage, byte*, byte[ByteSize]>;
-    using atrp_interface_t               = iskl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
+    using atrp_type                      = iskl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
 
     static constexpr bool IsTypeNoThrowDestructible = noexcept(static_cast<_T*>(nullptr)->~_T());
     static constexpr bool IsTypeTrivial             = __is_trivial(_T);
@@ -111,13 +112,13 @@ public:
     }
 
     //! Upgrade to a full queue interface
-    [[nodiscard]] atrp_interface_t& upgrade() noexcept {
-        return *reinterpret_cast<atrp_interface_t*>(this);
+    [[nodiscard]] atrp_type& upgrade() noexcept {
+        return *reinterpret_cast<atrp_type*>(this);
     }
 
     //! Upgrade to a full queue interface
-    [[nodiscard]] const atrp_interface_t& upgrade() const noexcept {
-        return *reinterpret_cast<const atrp_interface_t*>(this);
+    [[nodiscard]] const atrp_type& upgrade() const noexcept {
+        return *reinterpret_cast<const atrp_type*>(this);
     }
 
     //! Get the internal buffer ptr

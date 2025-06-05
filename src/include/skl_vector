@@ -8,9 +8,10 @@
 #pragma once
 #include "skl_int"
 #include "skl_assert"
+#include "skl_traits/placement_new"
 
 namespace skl {
-template <typename>
+template <typename, u64>
 class iskl_vector;
 
 extern void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
@@ -27,9 +28,10 @@ constexpr u64 CVectorIncreaseStep = 8U;
 template <typename _T, u64 _InitialCapacity = CVectorIncreaseStep>
 struct skl_vector {
 public:
-    static constexpr auto InitialCapacity = _InitialCapacity;
-    using type                            = _T;
-    using size_t                          = u64;
+    static constexpr auto CInitialCapacity = _InitialCapacity;
+    using value_type                       = _T;
+    using size_type                        = u64;
+    using atrp_type                        = iskl_vector<_T, _InitialCapacity>;
 
     skl_vector() noexcept {
         initialize(_InitialCapacity);
@@ -97,13 +99,51 @@ public:
     }
 
     //! Upgrade to a full vector interface
-    [[nodiscard]] iskl_vector<_T>& upgrade() noexcept {
-        return *reinterpret_cast<iskl_vector<_T>*>(this);
+    [[nodiscard]] atrp_type& upgrade() noexcept {
+        return *reinterpret_cast<atrp_type*>(this);
     }
 
     //! Upgrade to a full vector interface
-    [[nodiscard]] const iskl_vector<_T>& upgrade() const noexcept {
-        return *reinterpret_cast<const iskl_vector<_T>*>(this);
+    [[nodiscard]] const atrp_type& upgrade() const noexcept {
+        return *reinterpret_cast<const atrp_type*>(this);
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] operator atrp_type&() noexcept {
+        return upgrade();
+    }
+
+    //! Upgrade to a full vector interface
+    [[nodiscard]] operator const atrp_type&() const noexcept {
+        return upgrade();
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] _T& back() noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(0U < size());
+        return *(m_finish - 1U);
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] const _T& back() const noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(0U < size());
+        return *(m_finish - 1U);
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] _T& front() noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(0U < size());
+        return *m_start;
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] const _T& front() const noexcept {
+        SKL_ASSERT(valid());
+        SKL_ASSERT(0U < size());
+        return *m_start;
     }
 
     //! Get the internal buffer ptr
@@ -255,6 +295,6 @@ private:
     _T* m_finish      = nullptr;
     _T* m_storage_end = nullptr;
 
-    friend iskl_vector<_T>;
+    friend iskl_vector<_T, _InitialCapacity>;
 };
 } // namespace skl

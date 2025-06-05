@@ -27,8 +27,8 @@ public:
     static constexpr u64  Capacity       = root_t::Capacity;
     static constexpr u64  Alignment      = root_t::Alignment;
     static constexpr u64  ByteSize       = root_t::ByteSize;
-    using type                           = typename root_t::type;
-    using size_t                         = typename root_t::size_t;
+    using value_type                     = typename root_t::value_type;
+    using size_type                      = typename root_t::size_type;
     using storage_t                      = typename root_t::storage_t;
 
 public:

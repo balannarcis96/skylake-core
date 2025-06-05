@@ -85,6 +85,15 @@ ipv4_addr_t ipv4_addr_from_str(const char* f_cstring) noexcept {
     return 0;
 }
 
+skl_result<ipv4_addr_t> ipv4_addr_from_str_safe(const char* f_cstring) noexcept {
+    struct in_addr ipv4_addr_bin{};
+    if (1 == inet_pton(AF_INET, f_cstring, &ipv4_addr_bin)) {
+        return be_to_le_u32(ipv4_addr_bin.s_addr);
+    }
+
+    return skl_fail{};
+}
+
 i32 get_last_network_err() noexcept { return errno; }
 
 bool bind_socket(socket_t f_socket, ipv4_addr_t f_addr, net_port_t f_port) noexcept {

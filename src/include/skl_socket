@@ -7,6 +7,7 @@
 //!
 #pragma once
 
+#include "skl_result"
 #include "skl_ip"
 
 namespace skl {
@@ -56,6 +57,10 @@ constexpr socket_t CInvalidSocket = -1;
 //! [Util] Convert ip v4 address string to binary
 //! \remark The resulted ipv4 u32 is in host form (little endian)
 [[nodiscard]] ipv4_addr_t ipv4_addr_from_str(const char* f_cstring) noexcept;
+
+//! [Util] Convert ip v4 address string to binary
+//! \remark The resulted ipv4 u32 is in host form (little endian)
+[[nodiscard]] skl_result<ipv4_addr_t> ipv4_addr_from_str_safe(const char* f_cstring) noexcept;
 
 //! [ThreadLocal] Get last OS network operation related error code
 [[nodiscard]] i32 get_last_network_err() noexcept;

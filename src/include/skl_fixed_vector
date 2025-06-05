@@ -9,6 +9,7 @@
 #include "skl_int"
 #include "skl_assert"
 #include "skl_traits/conditional_t"
+#include "skl_traits/placement_new"
 
 namespace skl {
 template <typename, u64, u64, bool, bool, bool>
@@ -38,10 +39,10 @@ struct skl_fixed_vector_impl {
     static constexpr u64  Capacity       = _FixedCapacity;
     static constexpr u64  Alignment      = _Alignment;
     static constexpr u64  ByteSize       = sizeof(_T) * Capacity;
-    using type                           = _T;
-    using size_t                         = u64;
+    using value_type                     = _T;
+    using size_type                      = u64;
+    using atrp_type                      = iskl_fixed_vector<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, UseCoreAlloc>;
     using storage_t                      = conditional_t<_UseHeepStorage, byte*, byte[ByteSize]>;
-    using atrp_interface_t               = iskl_fixed_vector<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, UseCoreAlloc>;
 
     constexpr skl_fixed_vector_impl() noexcept {
         alloc_storage_on_construct<true>();
@@ -100,13 +101,13 @@ struct skl_fixed_vector_impl {
     }
 
     //! Upgrade to a full vector interface
-    [[nodiscard]] constexpr atrp_interface_t& upgrade() noexcept {
-        return *reinterpret_cast<atrp_interface_t*>(this);
+    [[nodiscard]] constexpr atrp_type& upgrade() noexcept {
+        return *reinterpret_cast<atrp_type*>(this);
     }
 
     //! Upgrade to a full vector interface
-    [[nodiscard]] constexpr const atrp_interface_t& upgrade() const noexcept {
-        return *reinterpret_cast<const atrp_interface_t*>(this);
+    [[nodiscard]] constexpr const atrp_type& upgrade() const noexcept {
+        return *reinterpret_cast<const atrp_type*>(this);
     }
 
     //! Get the internal buffer ptr
@@ -158,6 +159,30 @@ struct skl_fixed_vector_impl {
     //! End ptr into the vector buffer
     [[nodiscard]] constexpr const _T* end() const noexcept {
         return m_finish;
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] _T& back() noexcept {
+        SKL_ASSERT(0U < size());
+        return *(m_finish - 1U);
+    }
+
+    //! Get ref to the last element in the vector
+    [[nodiscard]] const _T& back() const noexcept {
+        SKL_ASSERT(0U < size());
+        return *(m_finish - 1U);
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] _T& front() noexcept {
+        SKL_ASSERT(0U < size());
+        return *m_start;
+    }
+
+    //! Get ref to the first element in the vector
+    [[nodiscard]] const _T& front() const noexcept {
+        SKL_ASSERT(0U < size());
+        return *m_start;
     }
 
     //! Call to do the defered heap allocation
