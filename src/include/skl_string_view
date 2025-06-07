@@ -166,6 +166,7 @@ public:
 
     //! Copy min(_N - 1U, length()) chars into \p f_out_buffer
     //! \remark Write a 0 (null-terminator) a-> f_out_buffer[min(_N - 1U, length())] = 0;
+    //! \returns No of character copied
     template <typename _Char, size_type _N>
     constexpr size_type copy_and_terminate(_Char (&f_out_buffer)[_N]) const noexcept {
         static_assert(_N > 0U, "f_out_buffer must have at least size 1");

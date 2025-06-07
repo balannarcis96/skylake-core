@@ -1,0 +1,58 @@
+//!
+//! \file skl_resources_dir
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <tune_skl_core_public.h>
+
+#include "skl_result"
+#include "skl_string_view"
+#include "skl_buffer_view"
+
+namespace skl {
+class ResourcesDirectory {
+public:
+    //! Set the base path (default = ./)
+    //! \returns SKL_ERR_PARAMS If path is to long
+    [[nodiscard]] skl_status set_base_path(skl_string_view f_path) noexcept;
+
+    //! Get the base path
+    [[nodiscard]] skl_string_view base_path() const noexcept;
+
+    //! Get the absolute base path
+    [[nodiscard]] skl_string_view base_path_absolute() const noexcept;
+
+    //! [ThreadLocal] Make subpath string
+    //! \returns SKL_ERR_SIZE if resulting path is to long
+    [[nodiscard]] skl_result<skl_string_view> make_path(skl_string_view f_sub_path) const noexcept;
+
+    //! [ThreadLocal] Make subpath string
+    //! \returns SKL_ERR_SIZE if resulting path is to long
+    [[nodiscard]] skl_result<skl_string_view> make_path_absolute(skl_string_view f_sub_path) const noexcept;
+
+    //! Make subpath string and store in the given \p f_target_buffer
+    //! \returns SKL_ERR_PARAMS if \p f_target_buffer has length less than 2
+    //! \returns SKL_ERR_SIZE if resulting path is to long and can't fit inside \p f_target_buffer
+    [[nodiscard]] skl_result<skl_string_view> make_path(skl_string_view f_sub_path, skl_buffer_view f_target_buffer) const noexcept;
+
+    //! [ThreadLocal] Make subpath string (checked)
+    [[nodiscard]] skl_string_view make_path_checked(skl_string_view f_sub_path) const noexcept;
+
+    //! Make subpath string and store in the given \p f_target_buffer (checked)
+    [[nodiscard]] skl_string_view make_path_checked(skl_string_view f_sub_path, skl_buffer_view f_target_buffer) const noexcept;
+
+    //! Make subpath string and store in the given \p f_target_buffer (checked)
+    [[nodiscard]] skl_string_view make_path_absolute_checked(skl_string_view f_sub_path) const noexcept;
+
+    //! Does the given \p f_sub_path exists
+    [[nodiscard]] bool path_exists(skl_string_view f_sub_path) noexcept;
+
+    //! Create directory or chain of directories
+    [[nodiscard]] skl_status create_directory(skl_string_view f_sub_path, bool f_delete_if_exists = false) const noexcept;
+
+protected:
+    char m_path[CPathMaxLength] = "./";
+};
+} // namespace skl

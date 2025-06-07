@@ -14,6 +14,10 @@
                             "value": "@CMAKE_CXX_STANDARD@",
                             "type": "u32"
                         },
+                        "CPathMaxLength": {
+                            "value": "512U",
+                            "type": "u32"
+                        },
                         "Squirrel1_NOISE1": {
                             "value": "0x68E31DA4U",
                             "type": "u32"
