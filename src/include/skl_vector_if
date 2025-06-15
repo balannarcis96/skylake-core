@@ -35,7 +35,6 @@ public:
 
     //! Can this vector fit \p f_objects_count
     [[nodiscard]] constexpr bool fits(u64 f_objects_count) const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(size() <= capacity());
         return (capacity() - size()) >= f_objects_count;
     }
@@ -46,8 +45,8 @@ public:
     }
 
     //! Is this vector valid (has storage allocated)
-    [[nodiscard]] constexpr bool valid() const noexcept {
-        return root()->valid();
+    [[nodiscard]] constexpr bool has_storage() const noexcept {
+        return root()->has_storage();
     }
 
     //! Get the internal buffer ptr
@@ -69,8 +68,6 @@ public:
     //! \remark Objects are destroyed or default constructed as needed
     //! \remark resize(0U) is same as clear()
     void resize(const u64 f_new_size) {
-        SKL_ASSERT(valid());
-
         if (f_new_size == 0U) {
             clear();
             return;
@@ -103,10 +100,9 @@ public:
 
     //! Reserve at least \p f_min_capacity in the internal buffer
     void reserve(const u64 f_min_capacity) {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < f_min_capacity);
 
-        if (capacity() > f_min_capacity) {
+        if (capacity() >= f_min_capacity) {
             return;
         }
 
@@ -115,10 +111,9 @@ public:
 
     //! Copy new object into the vector front
     void push_back(const _T& f_object) {
-        SKL_ASSERT(valid());
         auto* self = root();
 
-        if ((self->m_finish + 1U) >= self->m_storage_end) [[unlikely]] {
+        if (self->m_finish == self->m_storage_end) [[unlikely]] {
             increase_buffer(capacity() + CVectorIncreaseStep);
         }
 
@@ -128,10 +123,9 @@ public:
 
     //! Move new object into the vector
     void emplace_back(_T&& f_object) {
-        SKL_ASSERT(valid());
         auto* self = root();
 
-        if ((self->m_finish + 1U) >= self->m_storage_end) [[unlikely]] {
+        if (self->m_finish == self->m_storage_end) [[unlikely]] {
             increase_buffer(capacity() + CVectorIncreaseStep);
         }
 
@@ -153,14 +147,12 @@ public:
 
     //! operator[]
     [[nodiscard]] _T& operator[](u64 f_index) noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(f_index < size());
         return data()[f_index];
     }
 
     //! operator[]
     [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(f_index < size());
         return data()[f_index];
     }
@@ -182,28 +174,24 @@ public:
 
     //! Get ref to the last element in the vector
     [[nodiscard]] _T& back() noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *(root()->m_finish - 1U);
     }
 
     //! Get ref to the last element in the vector
     [[nodiscard]] const _T& back() const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *(root()->m_finish - 1U);
     }
 
     //! Get ref to the first element in the vector
     [[nodiscard]] _T& front() noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *root()->m_start;
     }
 
     //! Get ref to the first element in the vector
     [[nodiscard]] const _T& front() const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *root()->m_start;
     }
@@ -336,7 +324,7 @@ public:
         SKL_ASSERT(f_index < _size);
 
         //1. Destroy the erased object if not trivial
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             (*this)[f_index].~_T();
         }
 
@@ -357,8 +345,6 @@ public:
 
 private:
     SKL_NOINLINE void increase_buffer(u64 f_new_capacity) {
-        SKL_ASSERT(valid());
-
         auto* self = root();
 
         //Save old buffer and size
@@ -367,35 +353,37 @@ private:
 
         //Allocate new buffers
         self->initialize(f_new_capacity, old_size);
-        SKL_ASSERT(valid());
+        SKL_ASSERT(has_storage());
 
         auto* new_buffer = self->m_start;
 
         //Copy or move existing objects into the new buffer (if any)
         if constexpr (__is_trivially_copyable(_T)) {
-            skl_vector_memcpy(new_buffer, old_buffer, old_size * sizeof(_T));
+            if (0U < old_size) {
+                skl_vector_memcpy(new_buffer, old_buffer, old_size * sizeof(_T));
+            }
         } else {
             if constexpr (is_move_constructible<_T>()) {
-                for (u64 i = 0U; i < size(); ++i) {
+                for (u64 i = 0U; i < old_size; ++i) {
                     new (&new_buffer[i]) _T(static_cast<_T&&>(old_buffer[i]));
                 }
             } else {
-                if constexpr (false == __is_trivially_constructible(_T)) {
-                    for (u64 i = 0U; i < size(); ++i) {
-                        new (&new_buffer[i]) _T(old_buffer[i]);
-                    }
+                for (u64 i = 0U; i < old_size; ++i) {
+                    new (&new_buffer[i]) _T(old_buffer[i]);
                 }
+            }
 
-                if constexpr (false == __is_trivially_destructible(_T)) {
-                    for (u64 i = 0U; i < size(); ++i) {
-                        old_buffer[i].~_T();
-                    }
+            if constexpr (false == __is_trivially_destructible(_T)) {
+                for (u64 i = 0U; i < old_size; ++i) {
+                    old_buffer[i].~_T();
                 }
             }
         }
 
         //Free old buffer
-        skl_vector_free(old_buffer);
+        if (nullptr != old_buffer) {
+            skl_vector_free(old_buffer);
+        }
     }
 
     //ATPR

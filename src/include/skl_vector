@@ -38,7 +38,9 @@ public:
     }
 
     explicit skl_vector(u64 f_initial_capacity) noexcept {
-        initialize(f_initial_capacity);
+        if (0U < f_initial_capacity) {
+            initialize(f_initial_capacity);
+        }
     }
 
     skl_vector(const skl_vector& f_other) noexcept(__is_nothrow_constructible(_T, const _T&)) {
@@ -94,7 +96,7 @@ public:
     }
 
     //! Is this vector valid (has storage allocated)
-    [[nodiscard]] constexpr bool valid() const noexcept {
+    [[nodiscard]] constexpr bool has_storage() const noexcept {
         return (nullptr != m_start) && (nullptr != m_finish) && (nullptr != m_storage_end);
     }
 
@@ -120,28 +122,24 @@ public:
 
     //! Get ref to the last element in the vector
     [[nodiscard]] _T& back() noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *(m_finish - 1U);
     }
 
     //! Get ref to the last element in the vector
     [[nodiscard]] const _T& back() const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *(m_finish - 1U);
     }
 
     //! Get ref to the first element in the vector
     [[nodiscard]] _T& front() noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *m_start;
     }
 
     //! Get ref to the first element in the vector
     [[nodiscard]] const _T& front() const noexcept {
-        SKL_ASSERT(valid());
         SKL_ASSERT(0U < size());
         return *m_start;
     }
@@ -158,13 +156,13 @@ public:
 
     //! operator[]
     [[nodiscard]] _T& operator[](u64 f_index) noexcept {
-        SKL_ASSERT(valid() && (f_index < size()));
+        SKL_ASSERT(f_index < size());
         return m_start[f_index];
     }
 
     //! operator[]
     [[nodiscard]] const _T& operator[](u64 f_index) const noexcept {
-        SKL_ASSERT(valid() && (f_index < size()));
+        SKL_ASSERT(f_index < size());
         return m_start[f_index];
     }
 
@@ -199,6 +197,10 @@ public:
 
 private:
     void initialize(u64 f_initial_capacity) noexcept {
+        if (0U == f_initial_capacity) {
+            f_initial_capacity = CInitialCapacity;
+        }
+
         m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
         m_finish      = m_start;
         m_storage_end = m_start + f_initial_capacity;
@@ -207,6 +209,10 @@ private:
     }
 
     void initialize(u64 f_initial_capacity, u64 f_size) noexcept {
+        if (0U == f_initial_capacity) {
+            f_initial_capacity = f_size + CVectorIncreaseStep;
+        }
+
         m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
         m_finish      = m_start + f_size;
         m_storage_end = m_start + f_initial_capacity;
@@ -228,13 +234,17 @@ private:
 
         //Preapre the target buffer
         if constexpr (_IsForCtor) {
-            initialize(f_other.capacity(), other_size);
+            if (0U < f_other.capacity()) {
+                initialize(f_other.capacity(), other_size);
+            }
         } else {
             clear();
 
             if (capacity() < other_size) {
                 //We need a bigger buffer
-                free_buffer();
+                if (nullptr != m_start) {
+                    free_buffer();
+                }
                 initialize(f_other.capacity(), other_size);
             } else {
                 //Adjust the size
@@ -244,7 +254,9 @@ private:
 
         //Perform the copy
         if constexpr (__is_trivially_copyable(_T)) {
-            skl_vector_memcpy(data(), f_other.data(), sizeof(_T) * other_size);
+            if (0U < other_size) {
+                skl_vector_memcpy(data(), f_other.data(), sizeof(_T) * other_size);
+            }
         } else {
             for (u64 i = 0U; i < other_size; ++i) {
                 new (&m_start[i]) _T(f_other.m_start[i]);
@@ -295,6 +307,7 @@ private:
     _T* m_finish      = nullptr;
     _T* m_storage_end = nullptr;
 
-    friend iskl_vector<_T, _InitialCapacity>;
+    template <typename, u64>
+    friend class iskl_vector;
 };
 } // namespace skl
