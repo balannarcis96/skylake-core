@@ -72,7 +72,7 @@ public:
     }
 
     //! Copy new object to the vector
-    [[nodiscard]] constexpr bool push_back(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
+    [[nodiscard]] constexpr bool push_back_safe(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         auto* self = root();
 
         if (false == fits(1U)) {
@@ -86,7 +86,7 @@ public:
     }
 
     //! Move construct new object into the vector
-    [[nodiscard]] constexpr bool emplace_back(_T&& f_object) noexcept
+    [[nodiscard]] constexpr bool emplace_back_safe(_T&& f_object) noexcept
         requires(__is_nothrow_constructible(_T, _T &&))
     {
         auto* self = root();
@@ -103,7 +103,7 @@ public:
 
     //! Custom construct new object into the vector
     template <typename... _Args>
-    [[nodiscard]] constexpr bool emplace_back(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
+    [[nodiscard]] constexpr bool emplace_back_safe(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
         auto* self = root();
 
         if (false == fits(1U)) {
@@ -118,7 +118,7 @@ public:
 
     //! Copy new object to the vector
     //! \remark asserts(fits(1U))
-    constexpr void push_back_checked(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
+    constexpr void push_back(const _T& f_object) noexcept(__is_nothrow_constructible(_T, const _T&)) {
         auto* self = root();
 
         SKL_ASSERT_CRITICAL(fits(1U));
@@ -129,7 +129,7 @@ public:
 
     //! Move construct new object into the vector
     //! \remark asserts(fits(1U))
-    constexpr void emplace_back_checked(_T&& f_object) noexcept
+    constexpr void emplace_back(_T&& f_object) noexcept
         requires(__is_nothrow_constructible(_T, _T &&))
     {
         auto* self = root();
@@ -143,7 +143,7 @@ public:
     //! Custom construct new object into the vector
     //! \remark asserts(fits(1U))
     template <typename... _Args>
-    constexpr void emplace_back_checked(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
+    constexpr void emplace_back(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
         auto* self = root();
 
         SKL_ASSERT_CRITICAL(fits(1U));

@@ -49,7 +49,7 @@ SKL_NOINLINE void skl_report_init_thread() noexcept {
     //Add it to the global list of buffers (make it available for reading)
     {
         skl::lock_guard_t guard{g_report_buffers_lock};
-        SKL_ASSERT_PERMANENT(g_report_buffers.upgrade().push_back(&g_skl_reporting::tls_checked()));
+        SKL_ASSERT_PERMANENT(g_report_buffers.upgrade().push_back_safe(&g_skl_reporting::tls_checked()));
     }
 }
 } // namespace
