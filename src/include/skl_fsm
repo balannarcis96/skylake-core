@@ -688,9 +688,15 @@ public:
 
         //Handle reset/exit
         if (next_state == CExitState) {
-            const auto is_not_exit = (0U == m_ops.m_state.flags.bIsForcedExit);
-            reset();
-            return is_not_exit;
+            if (0U == m_ops.m_state.flags.bIsForcedExit) {
+                reset();
+
+                //It's not force exit, reset the fsm and continue
+                return true;
+            }
+
+            //It's force exit, end the ticking
+            return false;
         }
 
         //Handle state change only if the _Impl needs too
