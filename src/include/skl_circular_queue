@@ -42,7 +42,7 @@ public:
     static constexpr u64  Mask           = _FixedCapacity - 1U;
     static constexpr u64  Alignment      = _Alignment;
     static constexpr u64  ByteSize       = sizeof(_T) * Capacity;
-    using value_type                     = _T;
+    using type                           = _T;
     using size_type                      = u64;
     using storage_t                      = conditional_t<_UseHeepStorage, byte*, byte[ByteSize]>;
     using atrp_type                      = iskl_circular_queue<_T, _FixedCapacity, _Alignment, _UseHeepStorage, _DeferHeepAlloc, _UseCoreAlloc>;
