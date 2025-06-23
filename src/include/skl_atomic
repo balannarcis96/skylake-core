@@ -8,6 +8,7 @@
 #pragma once
 
 #include <atomic>
+#include <type_traits>
 
 namespace std {
 template <typename _T, bool bDefaultTo_Relaxed_Or_AcquireRelease = true>

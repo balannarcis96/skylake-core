@@ -7,6 +7,7 @@
 //!
 #include <cstdio>
 #include <csignal>
+#include <cstdlib>
 
 #include "skl_core"
 #include "skl_signal"
