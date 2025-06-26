@@ -113,6 +113,12 @@ public:
         return static_cast<_Data&&>(*reinterpret_cast<_Data*>(m_value_buffer));
     }
 
+    constexpr void update_value(_Data f_value) noexcept
+        requires(__is_pod(_Data))
+    {
+        new (m_value_buffer) _Data(f_value);
+    }
+
 private:
     template <typename... _Args>
     constexpr void construct_data(_Args... f_args) noexcept {
