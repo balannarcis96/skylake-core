@@ -117,6 +117,7 @@ public:
         requires(__is_pod(_Data))
     {
         new (m_value_buffer) _Data(f_value);
+        m_status = SKL_SUCCESS;
     }
 
 private:
