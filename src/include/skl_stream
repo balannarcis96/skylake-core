@@ -84,7 +84,7 @@ public:
         root()->position = 0U;
     }
     void seek_exact(u32 f_new_position) noexcept {
-        SKL_ASSERT(f_new_position < length());
+        SKL_ASSERT(f_new_position <= length());
         root()->position = f_new_position;
     }
     void reset() noexcept {
