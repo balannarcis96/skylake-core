@@ -328,6 +328,18 @@ protected:
         return f_new_state;
     }
 
+    //! [FSM-API] Go to a new state and new substate
+    //! \remark Asserts \p f_new_state != fsm_state()
+    [[nodiscard]] constexpr state_t fsm_goto(state_t f_new_state, sub_state_t f_new_sub_state) noexcept {
+        SKL_ASSERT(f_new_state != fsm_state());
+        m_state.transition_flags.bResetStateStartTime = 1U;
+        m_state.transition_flags.bResetTicksCount     = 1U;
+        m_state.transition_flags.bResetSubState       = 0U;
+        m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.sub_state = f_new_sub_state;
+        return f_new_state;
+    }
+
     //! [FSM-API] Go to the last fsm state
     //! \remark Asserts (fsm_last_state() != fsm_state() || fsm_sub_state() != 0)
     //! \remark Cannot return to same state on substate 0, this can cause infinite looping
