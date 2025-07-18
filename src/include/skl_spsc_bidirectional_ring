@@ -1,0 +1,215 @@
+//!
+//! \file skl_spsc_bidirectional_ring
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <skl_int>
+#include <skl_def>
+#include <skl_atomic>
+#include <skl_result>
+#include <skl_utility>
+
+template <typename _Object>
+concept spsc_bidirectional_ring_reset_method_c = requires(_Object t) {
+    { t.reset() } noexcept;
+};
+
+//! [WaitFree] Single Consummer Single Producer, bidirectional ring buffer (queue)
+template <typename _Object, u64 _Size>
+    requires(__is_nothrow_constructible(_Object))
+struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
+    static constexpr u64 Size = _Size;
+    static constexpr u64 Mask = _Size - 1U;
+    static_assert((Size > 0ULL) && (0U == (Size & Mask)), "_Size must be a power of 2!");
+
+    SKL_NO_MOVE_OR_COPY(spsc_bidirectional_ring_t);
+
+    constexpr spsc_bidirectional_ring_t() noexcept  = default;
+    constexpr ~spsc_bidirectional_ring_t() noexcept = default;
+
+    //! Get the internal buffer
+    //! \remark only use this method when the producer and consumer are not running
+    //! \remark eg. use it to prepare the objects in the buffer is a specific way before use
+    [[nodiscard]] _Object* buffer() noexcept {
+        return m_objects;
+    }
+
+    //! [SCSP] {Producer} Allocate new object
+    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \returns nullptr if no object available for allocation
+    [[nodiscard]] _Object* allocate() noexcept {
+        if (0U == free_count()) {
+            return nullptr;
+        }
+
+        const auto alloc_index = m_allocate_head++;
+        return &m_objects[(alloc_index & Mask)];
+    }
+
+    //! [SCSP] {Producer} Allocate new object
+    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \remark asserts free_count() > 0
+    [[nodiscard]] _Object& allocate_checked() noexcept {
+        SKL_ASSERT(0U < free_count());
+        const auto alloc_index = m_allocate_head++;
+        return m_objects[(alloc_index & Mask)];
+    }
+
+    //! [SCSP] {Producer} Allocate objects in bulk
+    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \returns false there aren't \p f_count free obejcts for allocation
+    [[nodiscard]] bool allocate_bulk(_Object** f_out_objects, u32 f_count) noexcept {
+        if (f_count > free_count()) {
+            return false;
+        }
+
+        const auto start = m_allocate_head;
+        for (u64 i = 0ULL; i < f_count; ++i) {
+            f_out_objects[i] = &m_objects[(start + i) & Mask];
+        }
+        m_allocate_head += f_count;
+
+        return true;
+    }
+
+    //! [SCSP] {Producer} Allocate objects in bulk
+    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \remark asserts free_count() >= \p f_count
+    void allocate_bulk_checked(_Object** f_out_objects, u32 f_count) noexcept {
+        SKL_ASSERT(f_count <= free_count());
+
+        const auto start = m_allocate_head;
+        for (u64 i = 0ULL; i < f_count; ++i) {
+            f_out_objects[i] = &m_objects[(start + i) & Mask];
+        }
+        m_allocate_head += f_count;
+    }
+
+    //! [SCSP] {Producer} Get count of free objects
+    [[nodiscard]] u64 free_count() const noexcept {
+        const u64 delta = m_allocate_head - m_end_tail;
+        SKL_ASSERT_CRITICAL(delta <= Size);
+        return Size - delta;
+    }
+
+    //! [SCSP] {Producer} Submit all allocated async sql objects (if any)
+    void submit() noexcept {
+        if (m_allocate_head > m_queue_head.load_relaxed()) {
+            m_queue_head.store_release(m_allocate_head);
+        }
+    }
+
+    //! [SCSP] {Consumer} Submit all processed objects
+    void submit_results() noexcept {
+        if (m_process_head > m_queue_tail.load_relaxed()) {
+            m_queue_tail.store_release(m_process_head);
+        }
+    }
+
+    //! [SCSP] {Consumer} Collect objects that need processing
+    [[nodiscard]] u32 dequeue_burst(_Object** f_out_objects, u32 f_max_count) noexcept {
+        const auto start = m_process_head;
+        const auto head  = m_queue_head.load_acquire();
+        const auto delta = head - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index      = (start + result) & Mask;
+                f_out_objects[result] = &m_objects[index];
+            }
+
+            m_process_head += result;
+        }
+
+        return result;
+    }
+
+    //! [SCSP] {Consumer} Collect objects that need processing
+    //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the consumer
+    [[nodiscard]] u32 dequeue_burst_hint(_Object** f_out_objects, u32 f_max_count, u32 f_out_remaining) noexcept {
+        const auto start = m_process_head;
+        const auto head  = m_queue_head.load_acquire();
+        const auto delta = head - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index      = (start + result) & Mask;
+                f_out_objects[result] = &m_objects[index];
+            }
+
+            m_process_head += result;
+        }
+
+        //Save remaining
+        f_out_remaining = delta - result;
+
+        return result;
+    }
+
+    //! [SCSP] {Producer} Get processed objects
+    [[nodiscard]] u32 dequeue_results_burst(_Object** f_out_buffer, u32 f_max_count) noexcept {
+        const auto start = m_collect_tail;
+        const auto end   = m_queue_tail.load_acquire();
+        const auto delta = end - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index     = (start + result) & Mask;
+                f_out_buffer[result] = &m_objects[index];
+            }
+            m_collect_tail += result;
+        }
+        return result;
+    }
+
+    //! [SCSP] {Producer} Get processed objects
+    //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the producers (results)
+    [[nodiscard]] u32 dequeue_results_burst_hint(_Object** f_out_buffer, u32 f_max_count, u32 f_out_remaining) noexcept {
+        const auto start = m_collect_tail;
+        const auto end   = m_queue_tail.load_acquire();
+        const auto delta = end - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index     = (start + result) & Mask;
+                f_out_buffer[result] = &m_objects[index];
+            }
+            m_collect_tail += result;
+        }
+
+        //Save remaining
+        f_out_remaining = delta - result;
+
+        return result;
+    }
+
+    //! [SCSP] {Producer} Submit all processed (results) objects (free objects)
+    void submit_processed_results() noexcept {
+        if constexpr (spsc_bidirectional_ring_reset_method_c<_Object>) {
+            while (m_end_tail != m_collect_tail) {
+                m_objects[m_end_tail & Mask].reset();
+                ++m_end_tail;
+            }
+        } else {
+            m_end_tail = m_collect_tail;
+        }
+    }
+
+private:
+    SKL_CACHE_ALIGNED _Object m_objects[Size]; //!< {Producer & Consumer} All queue objects
+
+    SKL_CACHE_ALIGNED u64 m_allocate_head = 0ULL; //!< {Producer} Head to allocate at
+    u64                   m_collect_tail  = 0ULL; //!< {Producer} Current collect tail
+    u64                   m_end_tail      = 0ULL; //!< {Producer} Current queue end tail
+
+    SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_head = 0ULL; //!< {Producer -> Consumer} Current enqueue head
+    SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_tail = 0ULL; //!< {Producer -> Consumer} Current enqueue head
+
+    SKL_CACHE_ALIGNED u64 m_process_head = 0ULL; //!< {Consummer} Current process head
+};

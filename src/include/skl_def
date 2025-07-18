@@ -214,3 +214,13 @@
 #    define SKL_ATPR_CLASS_PRIVATE(ClassName, TargetType) \
         SKL_ATPR_CLASS_BASE(ClassName, TargetType, private)
 #endif
+
+#ifndef SKL_DISABLE_ALLOC
+#    define SKL_DISABLE_ALLOC(ClassName)                             \
+        static void* operator new(std::size_t)             = delete; \
+        static void* operator new[](std::size_t)           = delete; \
+        static void  operator delete(void*)                = delete; \
+        static void  operator delete[](void*)              = delete; \
+        static void  operator delete(void*, std::size_t)   = delete; \
+        static void  operator delete[](void*, std::size_t) = delete;
+#endif
