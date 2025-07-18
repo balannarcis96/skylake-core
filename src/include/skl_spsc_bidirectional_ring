@@ -11,12 +11,13 @@
 #include <skl_result>
 #include <skl_utility>
 
+//! Concept to detect the [reset() noexcept] method on _Object
 template <typename _Object>
-concept spsc_bidirectional_ring_reset_method_c = requires(_Object t) {
-    { t.reset() } noexcept;
+concept spsc_bidirectional_ring_reset_method_c = requires(_Object f_object) {
+    { f_object.reset() } noexcept;
 };
 
-//! [WaitFree] Single Consummer Single Producer, bidirectional ring buffer (queue)
+//! [WaitFree] Single Consumer Single Producer, bidirectional ring buffer (queue)
 template <typename _Object, u64 _Size>
     requires(__is_nothrow_constructible(_Object))
 struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
@@ -31,13 +32,13 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
 
     //! Get the internal buffer
     //! \remark only use this method when the producer and consumer are not running
-    //! \remark eg. use it to prepare the objects in the buffer is a specific way before use
+    //! \remark eg. use it to prepare the objects in the buffer in a specific way before use
     [[nodiscard]] _Object* buffer() noexcept {
         return m_objects;
     }
 
     //! [SCSP] {Producer} Allocate new object
-    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \remark call submit() to submit all allocated objects to be visibile to the consumer
     //! \returns nullptr if no object available for allocation
     [[nodiscard]] _Object* allocate() noexcept {
         if (0U == free_count()) {
@@ -49,7 +50,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate new object
-    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \remark call submit() to submit all allocated objects to be visibile to the consumer
     //! \remark asserts free_count() > 0
     [[nodiscard]] _Object& allocate_checked() noexcept {
         SKL_ASSERT(0U < free_count());
@@ -58,8 +59,8 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate objects in bulk
-    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
-    //! \returns false there aren't \p f_count free obejcts for allocation
+    //! \remark call submit() to make all allocated objects visibile to the consumer in a single (release) atomic operation
+    //! \returns false the queue is full, no \p f_count free obejcts for allocation
     [[nodiscard]] bool allocate_bulk(_Object** f_out_objects, u32 f_count) noexcept {
         if (f_count > free_count()) {
             return false;
@@ -75,7 +76,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate objects in bulk
-    //! \remark call submit() to submit all allocated objects to be visibile to the consummer
+    //! \remark call submit() to make all allocated objects visibile to the consumer in a single (release) atomic operation
     //! \remark asserts free_count() >= \p f_count
     void allocate_bulk_checked(_Object** f_out_objects, u32 f_count) noexcept {
         SKL_ASSERT(f_count <= free_count());
@@ -108,7 +109,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         }
     }
 
-    //! [SCSP] {Consumer} Collect objects that need processing
+    //! [SCSP] {Consumer} Collect objects that need processing (up to \p f_max_count)
     [[nodiscard]] u32 dequeue_burst(_Object** f_out_objects, u32 f_max_count) noexcept {
         const auto start = m_process_head;
         const auto head  = m_queue_head.load_acquire();
@@ -127,7 +128,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return result;
     }
 
-    //! [SCSP] {Consumer} Collect objects that need processing
+    //! [SCSP] {Consumer} Collect objects that need processing (up to \p f_max_count)
     //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the consumer
     [[nodiscard]] u32 dequeue_burst_hint(_Object** f_out_objects, u32 f_max_count, u32 f_out_remaining) noexcept {
         const auto start = m_process_head;
@@ -150,7 +151,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return result;
     }
 
-    //! [SCSP] {Producer} Get processed objects
+    //! [SCSP] {Producer} Get processed objects (up to \p f_max_count)
     [[nodiscard]] u32 dequeue_results_burst(_Object** f_out_buffer, u32 f_max_count) noexcept {
         const auto start = m_collect_tail;
         const auto end   = m_queue_tail.load_acquire();
@@ -167,8 +168,8 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return result;
     }
 
-    //! [SCSP] {Producer} Get processed objects
-    //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the producers (results)
+    //! [SCSP] {Producer} Get processed objects (up to \p f_max_count)
+    //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the producer (results)
     [[nodiscard]] u32 dequeue_results_burst_hint(_Object** f_out_buffer, u32 f_max_count, u32 f_out_remaining) noexcept {
         const auto start = m_collect_tail;
         const auto end   = m_queue_tail.load_acquire();
@@ -189,7 +190,8 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return result;
     }
 
-    //! [SCSP] {Producer} Submit all processed (results) objects (free objects)
+    //! [SCSP] {Producer} Submit all processed (results) objects (free objects back to the queue)
+    //! \remark if _Object has a method reset() noexcept, it will be called otherwise objects are left as they are
     void submit_processed_results() noexcept {
         if constexpr (spsc_bidirectional_ring_reset_method_c<_Object>) {
             while (m_end_tail != m_collect_tail) {
@@ -211,5 +213,5 @@ private:
     SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_head = 0ULL; //!< {Producer -> Consumer} Current enqueue head
     SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_tail = 0ULL; //!< {Producer -> Consumer} Current enqueue head
 
-    SKL_CACHE_ALIGNED u64 m_process_head = 0ULL; //!< {Consummer} Current process head
+    SKL_CACHE_ALIGNED u64 m_process_head = 0ULL; //!< {Consumer} Current process head
 };
