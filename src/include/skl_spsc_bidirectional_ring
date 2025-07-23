@@ -95,9 +95,16 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return Size - delta;
     }
 
+    //! [SCSP] {Producer} Get allocated objects count
+    [[nodiscard]] u64 allocated_count() const noexcept {
+        return m_allocate_head - m_queue_head.load_relaxed();
+    }
+
     //! [SCSP] {Producer} Submit all allocated async sql objects (if any)
     void submit() noexcept {
-        if (m_allocate_head > m_queue_head.load_relaxed()) {
+        const auto head = m_queue_head.load_relaxed();
+        SKL_ASSERT_CRITICAL(m_allocate_head >= head)
+        if (m_allocate_head > head) {
             m_queue_head.store_release(m_allocate_head);
         }
     }
@@ -107,6 +114,18 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         if (m_process_head > m_queue_tail.load_relaxed()) {
             m_queue_tail.store_release(m_process_head);
         }
+    }
+
+    //! [SCSP] {Consummer} Pop allocated object
+    //! \remark asserts (0U < allocated_count())
+    template <bool _ResetOjectIfPossible = true>
+    void pop_allocation() noexcept {
+        SKL_ASSERT_CRITICAL(0U < allocated_count());
+        if constexpr (_ResetOjectIfPossible && spsc_bidirectional_ring_reset_method_c<_Object>) {
+            m_objects[(m_allocate_head - 1U) & Mask].reset();
+        }
+
+        --m_allocate_head;
     }
 
     //! [SCSP] {Consumer} Collect objects that need processing (up to \p f_max_count)
