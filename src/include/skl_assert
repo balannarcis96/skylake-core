@@ -10,41 +10,41 @@
 #include <tune_skl_core_public.h>
 
 namespace skl_assert {
-SKL_NOINLINE [[noreturn]] extern void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept;
+SKL_NOINLINE [[noreturn]] [[gnu::cold]] extern void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept;
 }
 
 #if SKL_ASSERT_LEVEL == SKL_ASSERT_LEVEL_ALL
 #    define HAS_SKL_ASSERT 1
 #    define SKL_ASSERT(expr)                                                  \
-        {                                                                     \
-            if (!!!(expr)) {                                                  \
+        do {                                                                  \
+            if (!(expr)) [[unlikely]] {                                       \
                 skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
             }                                                                 \
-        }
+        } while (false)
 #    define HAS_SKL_ASSERT_CRITICAL 1
 #    define SKL_ASSERT_CRITICAL(expr)                                         \
-        {                                                                     \
-            if (!!!(expr)) {                                                  \
+        do {                                                                  \
+            if (!(expr)) [[unlikely]] {                                       \
                 skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
             }                                                                 \
-        }
+        } while (false)
 #elif SKL_ASSERT_LEVEL == SKL_ASSERT_LEVEL_CRITICAL
 #    define HAS_SKL_ASSERT_CRITICAL 1
 #    define SKL_ASSERT(expr)
 #    define SKL_ASSERT_CRITICAL(expr)                                         \
-        {                                                                     \
-            if (!!!(expr)) {                                                  \
+        do {                                                                  \
+            if (!(expr)) [[unlikely]] {                                       \
                 skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
             }                                                                 \
-        }
+        } while (false)
 #else
-#    define SKL_ASSERT(expr)          
-#    define SKL_ASSERT_CRITICAL(expr) 
+#    define SKL_ASSERT(expr)
+#    define SKL_ASSERT_CRITICAL(expr)
 #endif
 
 #define SKL_ASSERT_PERMANENT(expr)                                        \
-    {                                                                     \
-        if (!!!(expr)) [[unlikely]] {                                     \
+    do {                                                                  \
+        if (!(expr)) [[unlikely]] {                                       \
             skl_assert::handle_assert_failure(__FILE__, __LINE__, #expr); \
         }                                                                 \
-    }
+    } while (false)

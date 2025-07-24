@@ -17,7 +17,7 @@ thread_local char g_assert_message_buffer[4098U];
 static_assert(__has_builtin(__builtin_debugtrap));
 
 namespace skl_assert {
-SKL_NOINLINE [[noreturn]] void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept {
+SKL_NOINLINE [[noreturn]] [[gnu::cold]] void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept {
     (void)snprintf(g_assert_message_buffer,
                    sizeof(g_assert_message_buffer) / (sizeof(g_assert_message_buffer[0])),
                    "\u001b[31mAssert \"%s\" failed!\nAt:%s:%lu\n\u001b[37m",
