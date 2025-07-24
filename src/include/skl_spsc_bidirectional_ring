@@ -103,7 +103,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     //! [SCSP] {Producer} Submit all allocated async sql objects (if any)
     void submit() noexcept {
         const auto head = m_queue_head.load_relaxed();
-        SKL_ASSERT_CRITICAL(m_allocate_head >= head)
+        SKL_ASSERT_CRITICAL(m_allocate_head >= head);
         if (m_allocate_head > head) {
             m_queue_head.store_release(m_allocate_head);
         }
@@ -116,7 +116,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         }
     }
 
-    //! [SCSP] {Consummer} Pop allocated object
+    //! [SCSP] {Producer} Pop allocated object
     //! \remark asserts (0U < allocated_count())
     template <bool _ResetOjectIfPossible = true>
     void pop_allocation() noexcept {
@@ -149,7 +149,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
 
     //! [SCSP] {Consumer} Collect objects that need processing (up to \p f_max_count)
     //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the consumer
-    [[nodiscard]] u32 dequeue_burst_hint(_Object** f_out_objects, u32 f_max_count, u32 f_out_remaining) noexcept {
+    [[nodiscard]] u32 dequeue_burst_hint(_Object** f_out_objects, u32 f_max_count, u32& f_out_remaining) noexcept {
         const auto start = m_process_head;
         const auto head  = m_queue_head.load_acquire();
         const auto delta = head - start;
@@ -189,7 +189,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
 
     //! [SCSP] {Producer} Get processed objects (up to \p f_max_count)
     //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the producer (results)
-    [[nodiscard]] u32 dequeue_results_burst_hint(_Object** f_out_buffer, u32 f_max_count, u32 f_out_remaining) noexcept {
+    [[nodiscard]] u32 dequeue_results_burst_hint(_Object** f_out_buffer, u32 f_max_count, u32& f_out_remaining) noexcept {
         const auto start = m_collect_tail;
         const auto end   = m_queue_tail.load_acquire();
         const auto delta = end - start;
