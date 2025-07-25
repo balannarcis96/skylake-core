@@ -1,9 +1,11 @@
 #include <skl_vector_if>
+#include <skl_log>
 
 #include <memory>
 
 #include <gtest/gtest.h>
 
+#if !SKL_BUILD_SHIPPING
 TEST(SkylakeVector, Basics_NoAllocateOnDefaultCtor_DefaultCtor) {
     struct trivial_t {
         byte body[1024];
@@ -125,6 +127,7 @@ TEST(SkylakeVector, Basics_CapacityCtor) {
     test_predicate_t::operator()(vec2);
     test_predicate_t::operator()(vec3);
 }
+#endif
 
 TEST(SkylakeVector, Basics_PushBackOnNoStorage) {
     struct trivial_t {
@@ -241,6 +244,7 @@ TEST(SkylakeVector, Basics_EmplaceBack) {
     ASSERT_EQ(ptr, upgrade[0U].get());
 }
 
+#if !SKL_BUILD_SHIPPING
 TEST(SkylakeVector, Basics_AllocateOnDefaultCtor_DefaultCtor) {
     struct trivial_t {
         byte body[1024];
@@ -326,6 +330,7 @@ TEST(SkylakeVector, Basics_AllocateOnDefaultCtor_DefaultCtor) {
     ASSERT_TRUE(vec2.has_storage());
     ASSERT_TRUE(vec3.has_storage());
 }
+#endif
 
 TEST(SkylakeVector, Basics_PushToCapacity_NoNewAllocation) {
     struct trivial_t {

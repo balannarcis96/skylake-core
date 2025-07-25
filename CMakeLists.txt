@@ -49,6 +49,12 @@ function(skl_CreateSkylakeCoreLibTarget
     TARGET_NAME
     PRESET_NAME)
 
+    # ENABLE_RTTI  [Optional] Enable RTTI (default=OFF)
+    # DISABLE_LTO  [Optional] Do not not LTO (link time optimization) in shipping builds (default=OFF)
+
+    set(_OPTIONS ENABLE_RTTI DISABLE_LTO)
+    cmake_parse_arguments(SKL "${_OPTIONS}" "" "" ${ARGN})
+
     # Add the static lib target
     add_library(${TARGET_NAME} STATIC
         ${SKL_CORE_LIB_SOURCE_FILES}
@@ -106,8 +112,6 @@ function(skl_CreateSkylakeCoreLibTarget
             -finline-functions # Aggressive inlining
             -fno-stack-protector # [Disabled] Detects some buffer overruns that overwrite a function's return address
             -ffast-math # Floating point - fast
-            -flto=full # Link time optimizations
-            -fno-rtti # Disable RTTI
 
             -march=native # Build for the current platform
             -mtune=native # Fine tune scheduling
@@ -116,10 +120,18 @@ function(skl_CreateSkylakeCoreLibTarget
             -ffunction-sections # Put each symbol in its own section
         )
         target_link_options(${TARGET_NAME} PUBLIC
-            -flto=full # Link time optimizations
             -Wl,--gc-sections # Strip dead code produced by the 2-section split
         )
         target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_BUILD_SHIPPING=1")
+
+        if(NOT SKL_ENABLE_RTTI)
+            target_compile_options(${TARGET_NAME} PUBLIC -fno-rtti) # Disable RTTI
+        endif()
+
+        if(NOT SKL_DISABLE_LTO)
+            target_compile_options(${TARGET_NAME} PUBLIC -flto=full) # Link time optimizations
+            target_link_options(${TARGET_NAME} PUBLIC -flto=full)    # Link time optimizations
+        endif()
 
         # FMT workaround: https://github.com/surge-synthesizer/surge/issues/7730
         target_compile_options(${TARGET_NAME} PUBLIC -Wno-nan-infinity-disabled)
