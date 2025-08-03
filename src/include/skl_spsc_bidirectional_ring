@@ -248,6 +248,28 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         return result;
     }
 
+    //! [SCSP] {Producer} Discard all results (if any)
+    template <bool _ResetObjectsIfPossible = true>
+    u32 discard_results() noexcept {
+        const auto start = m_collect_tail;
+        const auto end   = m_queue_tail.load_acquire();
+        const auto delta = end - start;
+
+        if (0U < delta) {
+            //Immediately collect all results
+            m_collect_tail = end;
+
+            //Reset all objects if possible and free them
+            if constexpr (_ResetObjectsIfPossible && spsc_bidirectional_ring_reset_method_c<_Object>) {
+                submit_processed_results();
+            } else {
+                m_end_tail = end;
+            }
+        }
+        
+        return delta;
+    }
+
     //! [SCSP] {Producer} Get processed objects (up to \p f_max_count)
     //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the producer (results)
     [[nodiscard]] u32 dequeue_results_burst_hint(_Object** f_out_buffer, u32 f_max_count, u32& f_out_remaining) noexcept {
