@@ -151,6 +151,7 @@
         "placement_new": "cpp",
         "skl_resources_dir": "cpp",
         "skl_spsc_bidirectional_ring": "cpp",
+        "skl_spsc_ring": "cpp",
         "skl_fsm": "cpp",
         "same_as": "cpp",
         "ctor": "cpp",

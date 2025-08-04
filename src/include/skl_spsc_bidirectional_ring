@@ -39,7 +39,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate new object
-    //! \remark call submit() to submit all allocated objects to be visibile to the consumer
+    //! \remark call submit() to submit all allocated objects to be visible to the consumer
     //! \returns nullptr if no object available for allocation
     [[nodiscard]] _Object* allocate() noexcept {
         if (0U == free_count()) {
@@ -51,7 +51,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate new object
-    //! \remark call submit() to submit all allocated objects to be visibile to the consumer
+    //! \remark call submit() to submit all allocated objects to be visible to the consumer
     //! \remark asserts free_count() > 0
     [[nodiscard]] _Object& allocate_checked() noexcept {
         SKL_ASSERT(0U < free_count());
@@ -60,8 +60,8 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate objects in bulk
-    //! \remark call submit() to make all allocated objects visibile to the consumer in a single (release) atomic operation
-    //! \returns false the queue is full, no \p f_count free obejcts for allocation
+    //! \remark call submit() to make all allocated objects visible to the consumer in a single (release) atomic operation
+    //! \returns false the queue is full, no \p f_count free objects for allocation
     [[nodiscard]] bool allocate_bulk(_Object** f_out_objects, u32 f_count) noexcept {
         if (f_count > free_count()) {
             return false;
@@ -77,7 +77,7 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
     }
 
     //! [SCSP] {Producer} Allocate objects in bulk
-    //! \remark call submit() to make all allocated objects visibile to the consumer in a single (release) atomic operation
+    //! \remark call submit() to make all allocated objects visible to the consumer in a single (release) atomic operation
     //! \remark asserts free_count() >= \p f_count
     void allocate_bulk_checked(_Object** f_out_objects, u32 f_count) noexcept {
         SKL_ASSERT(f_count <= free_count());
@@ -115,6 +115,16 @@ struct SKL_CACHE_ALIGNED spsc_bidirectional_ring_t {
         if (m_process_head > m_queue_tail.load_relaxed()) {
             m_queue_tail.store_release(m_process_head);
         }
+    }
+
+    //! [SCSP] {Consumer} Submit all processed objects
+    //! \returns the count of submitted objects
+    u32 submit_results_ex() noexcept {
+        const auto delta = m_process_head - m_queue_tail.load_relaxed();
+        if (0U < delta) {
+            m_queue_tail.store_release(m_process_head);
+        }
+        return delta;
     }
 
     //! [SCSP] {Producer} Pop allocated object
@@ -326,7 +336,7 @@ private:
     u64                   m_end_tail      = 0ULL; //!< {Producer} Current queue end tail
 
     SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_head = 0ULL; //!< {Producer -> Consumer} Current enqueue head
-    SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_tail = 0ULL; //!< {Producer -> Consumer} Current enqueue tail
+    SKL_CACHE_ALIGNED std::relaxed_value<u64> m_queue_tail = 0ULL; //!< {Consumer -> Producer} Current enqueue tail
 
     SKL_CACHE_ALIGNED u64 m_process_head = 0ULL; //!< {Consumer} Current process head
 };
