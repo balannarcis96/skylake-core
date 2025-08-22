@@ -15,10 +15,10 @@ namespace skl {
 template <typename, u64, u64, bool, bool, bool>
 class iskl_fixed_vector;
 
-void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void* skl_vector_alloc(u64 f_bytes_count, u64 f_alignment) noexcept;
 void  skl_vector_free(void* f_block) noexcept;
 void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
-void* skl_core_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void* skl_core_alloc(u64 f_bytes_count, u64 f_alignment) noexcept;
 void  skl_core_free(void* f_block) noexcept;
 void  skl_core_zero_memory(void* f_block, u64 f_bytes_count) noexcept;
 } // namespace skl

@@ -254,6 +254,13 @@ public:
         return end();
     }
 
+    //! Check if the vector contains \p f_value
+    [[nodiscard]] constexpr bool contains(_T f_value) const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        return end() != find(f_value);
+    }
+
     //! Find \p f_target in this vector
     //!
     //! Usage:

@@ -133,6 +133,19 @@ public:
         new (self->m_finish++) _T(static_cast<_T&&>(f_object));
     }
 
+    //! Move new object into the vector
+    template <typename... _Args>
+    void emplace_back(_Args&&... f_args) {
+        auto* self = root();
+
+        if (self->m_finish == self->m_storage_end) [[unlikely]] {
+            increase_buffer(capacity() + CVectorIncreaseStep);
+        }
+
+        //Move construct the object
+        new (self->m_finish++) _T(static_cast<_T&&>(f_args)...);
+    }
+
     //! Remove the last object
     void pop_back() noexcept(__is_nothrow_destructible(_T)) {
         SKL_ASSERT(0U < size());

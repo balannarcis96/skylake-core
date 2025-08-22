@@ -1,0 +1,397 @@
+#pragma once
+
+#include "skl_fixed_vector_if"
+#include "skl_vector_if"
+#include "skl_def"
+#include "skl_pair"
+
+namespace skl {
+namespace stable_object_pool {
+    template <typename _Block, bool _UseCoreAlloc>
+    struct block_allocator_t;
+
+    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct = true, bool _UseCoreAlloc = false>
+    struct object_pool_t;
+} // namespace stable_object_pool
+
+template <typename _Object,
+          u64  _BlockSize,
+          bool _ConstructAndDestruct = true,
+          bool _UseCoreAlloc         = false,
+          typename _BlockAllocator
+          = stable_object_pool::block_allocator_t<
+              stable_object_pool::object_pool_t<
+                  _Object,
+                  _BlockSize,
+                  _ConstructAndDestruct,
+                  _UseCoreAlloc>,
+              _UseCoreAlloc>>
+class StableObjectPool;
+
+namespace stable_object_pool {
+    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc>
+    struct object_pool_t {
+        struct alignas(alignof(_Object)) object_placeholder_t {
+            byte body[sizeof(_Object)]{};
+        };
+
+        using block_t      = skl::skl_fixed_vector_impl<object_placeholder_t, _BlockSize, SKL_CACHE_LINE_SIZE, false, _UseCoreAlloc>;
+        using free_stack_t = skl::skl_fixed_vector_impl<u16, _BlockSize, alignof(u16), false, _UseCoreAlloc>;
+
+        static_assert(_BlockSize > 0U, "_BlockSize must be grater then 0");
+        static_assert(_BlockSize <= 0xffffu, "_BlockSize must be less then 65536");
+
+        object_pool_t() noexcept {
+            //Fill the free stack
+            u16 free_indices = 0u;
+            while (free_indices < u16(_BlockSize)) {
+                m_free.upgrade().push_back(free_indices++);
+            }
+
+            m_block_start = reinterpret_cast<_Object*>(m_block.data());
+            m_block_end   = m_block_start + _BlockSize;
+
+            m_block.upgrade().grow(m_block.capacity());
+        }
+        ~object_pool_t() noexcept {
+            clear();
+        }
+
+        SKL_NO_MOVE_OR_COPY(object_pool_t);
+
+        //! Allocate a new object, returns nullptr if no free object
+        template <typename... _Args>
+        [[nodiscard]] _Object* allocate(_Args... f_args) noexcept(__is_nothrow_constructible(_Object, _Args...))
+            requires(_ConstructAndDestruct)
+        {
+            if (m_free.empty()) {
+                return nullptr;
+            }
+
+            //Get the index of the free object
+            const auto index = m_free.back();
+            m_free.upgrade().pop_back();
+
+            //Construct the object in place
+            auto* place = reinterpret_cast<_Object*>(&m_block[index]);
+            new (place) _Object(skl_fwd<_Args>(f_args)...);
+
+            return place;
+        }
+
+        //! Allocate a new raw object
+        //! \returns nullptr if no free object
+        //! \remark Object is not constructed
+        [[nodiscard]] _Object* allocate_raw() noexcept {
+            if (m_free.empty()) {
+                return nullptr;
+            }
+
+            //Get the index of the free object
+            const auto index = m_free.back();
+            m_free.upgrade().pop_back();
+
+            //Do not construct the object
+            auto* place = reinterpret_cast<_Object*>(&m_block[index]);
+
+            return place;
+        }
+
+        //! Allocate a new raw object
+        //! \remark Object is not constructed
+        //! \remark Asserts there is a free object
+        [[nodiscard]] _Object* allocate_raw_checked() noexcept {
+            SKL_ASSERT_CRITICAL(false == m_free.empty());
+
+            //Get the index of the free object
+            const auto index = m_free.back();
+            m_free.upgrade().pop_back();
+
+            //Do not construct the object
+            auto* place = reinterpret_cast<_Object*>(&m_block[index]);
+
+            return place;
+        }
+
+        //! Deallocate the given object
+        //! \returns false if the object is out of range
+        [[nodiscard]] bool deallocate_safe(_Object* f_object) noexcept {
+            if (false == owns(f_object)) {
+                return false;
+            }
+
+            if constexpr (_ConstructAndDestruct) {
+                //Call the destructor
+                f_object->~_Object();
+            }
+
+            //Calculate the index of the object
+            const auto index = static_cast<u16>(f_object - m_block_start);
+
+#if !SKL_BUILD_SHIPPING
+            //Make sure the index is valid
+            SKL_ASSERT_CRITICAL(index < _BlockSize);
+
+            //Make sure the object is not already deallocated
+            SKL_ASSERT_CRITICAL(false == m_free.upgrade().contains(index));
+#endif
+
+            m_free.upgrade().push_back(index);
+
+            return true;
+        }
+
+        //! Deallocate the given object
+        //! \remark asserts the object is in range
+        void deallocate(_Object* f_object) noexcept {
+            SKL_ASSERT_CRITICAL(owns(f_object));
+
+            if constexpr (_ConstructAndDestruct) {
+                //Call the destructor
+                f_object->~_Object();
+            }
+
+            //Calculate the index of the object
+            const auto index = static_cast<u16>(f_object - m_block_start);
+
+#if !SKL_BUILD_SHIPPING
+            //Make sure the index is valid
+            SKL_ASSERT_CRITICAL(index < _BlockSize);
+
+            //Make sure the object is not already deallocated
+            SKL_ASSERT_CRITICAL(false == m_free.upgrade().contains(index));
+#endif
+
+            m_free.upgrade().push_back(index);
+        }
+
+        //! Get the number of free objects
+        [[nodiscard]] u64 free_count() const noexcept {
+            return m_free.size();
+        }
+
+        //! Get the number of used objects
+        [[nodiscard]] u64 size() const noexcept {
+            return capacity() - free_count();
+        }
+
+        //! Get the number of objects in the pool
+        [[nodiscard]] constexpr u64 capacity() const noexcept {
+            return _BlockSize;
+        }
+
+        //! Is the pool full
+        [[nodiscard]] constexpr bool full() const noexcept {
+            return m_free.empty();
+        }
+
+        //! Is the pool empty
+        [[nodiscard]] constexpr bool empty() const noexcept {
+            return m_free.size() == _BlockSize;
+        }
+
+        //! Is the object from this pool
+        [[nodiscard]] bool owns(const _Object* f_object) const noexcept {
+            return (f_object >= m_block_start) && (f_object < m_block_end);
+        }
+
+        //! Clear the pool, destroying all objects if needed
+        //! \remark θ(n * m) where n is the block size and m is the number of used objects
+        constexpr void clear() noexcept {
+            if constexpr (_ConstructAndDestruct) {
+                //Destroy all used objects
+                for (u16 i = 0u; i < u16(_BlockSize); ++i) {
+                    //If the object is not in the free stack, it is used
+                    if (false == m_free.upgrade().contains(i)) {
+                        auto* place = reinterpret_cast<_Object*>(&m_block[i]);
+                        place->~_Object();
+                    }
+                }
+            }
+
+            m_free.clear();
+
+            //Refill the free stack
+            u16 free_indices = 0u;
+            while (free_indices < u16(_BlockSize)) {
+                m_free.upgrade().push_back(free_indices++);
+            }
+        }
+
+    private:
+        friend StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc>;
+
+        block_t      m_block;       //!< Storage for objects
+        free_stack_t m_free;        //!< Stack of free object indices
+        _Object*     m_block_start; //!< Start of the object block
+        _Object*     m_block_end;   //!< End of the object block (last valid object in the block)
+    };
+
+    template <typename _Block, bool _UseCoreAlloc>
+    struct block_allocator_t {
+        static _Block* operator()() noexcept {
+            void* memory_block = nullptr;
+            if constexpr (_UseCoreAlloc) {
+                memory_block = skl_core_alloc(sizeof(_Block), alignof(_Block));
+            } else {
+                memory_block = skl_vector_alloc(sizeof(_Block), alignof(_Block));
+            }
+            SKL_ASSERT_PERMANENT(nullptr != memory_block);
+            new (memory_block) _Block();
+            return reinterpret_cast<_Block*>(memory_block);
+        }
+    };
+} // namespace stable_object_pool
+
+template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc, typename _BlockAllocator>
+class StableObjectPool {
+public:
+    using pool_t            = stable_object_pool::object_pool_t<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc>;
+    using block_allocator_t = _BlockAllocator;
+
+    StableObjectPool() noexcept = default;
+    SKL_NO_MOVE_OR_COPY_DEFAULT_DTOR(StableObjectPool);
+
+    //! Allocate a new object
+    //! \returns nullptr if no free object
+    template <typename... _Args>
+        requires(_ConstructAndDestruct)
+    [[nodiscard]] _Object* allocate(_Args... f_args) noexcept {
+        auto* obj = allocate_raw();
+        if (nullptr == obj) {
+            return nullptr;
+        }
+
+        //Construct the object in place
+        new (obj) _Object(skl_fwd<_Args>(f_args)...);
+
+        [[likely]] return obj;
+    }
+
+    //! Allocate a new raw object
+    //! \returns nullptr if no free object
+    //! \remark Object is not constructed
+    [[nodiscard]] _Object* allocate_raw() noexcept {
+        if (m_pools.empty()) [[unlikely]] {
+            goto new_pool;
+        }
+
+        if (m_pools[m_next_pool_index]->full()) {
+            goto new_pool;
+        }
+
+    allocate:
+        SKL_ASSERT(false == m_pools[m_next_pool_index]->full());
+        return m_pools[m_next_pool_index]->allocate_raw_checked();
+
+    new_pool:
+        auto* new_block = block_allocator_t::operator()();
+        m_pools.upgrade().push_back(new_block);
+        m_next_pool_index = u32(m_pools.size() - 1u);
+        m_pool_ranges.upgrade().emplace_back(skl::pair<_Object*, _Object*>(new_block->m_block_start, new_block->m_block_end));
+        goto allocate;
+    }
+
+    //! Get current pool
+    [[nodiscard]] pool_t* current_pool() noexcept {
+        if (m_pools.empty()) {
+            return nullptr;
+        }
+
+        return m_pools[m_next_pool_index];
+    }
+
+    //! Deallocate the given object
+    //! \returns false if the object is out of range
+    //! \remark Asserts that the object is not already deallocated
+    [[nodiscard]] bool deallocate_safe(_Object* f_object) noexcept {
+        //Find the pool that owns this object
+        for (u64 i = 0u; i < m_pool_ranges.size(); ++i) {
+            const auto& range = m_pool_ranges[i];
+            if ((f_object >= range.first) && (f_object < range.second)) {
+                m_pools[i]->deallocate(f_object);
+                m_next_pool_index = u32(i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Deallocate the given object
+    //! \remark asserts the object is in range
+    //! \remark Asserts that the object is not already deallocated
+    void deallocate(_Object* f_object) noexcept {
+        //Find the pool that owns this object
+        for (u64 i = 0u; i < m_pool_ranges.size(); ++i) {
+            const auto [range_start, range_end] = m_pool_ranges[i];
+            if ((f_object >= range_start) && (f_object < range_end)) {
+                m_next_pool_index = u32(i);
+                m_pools[i]->deallocate(f_object);
+                f_object = nullptr;
+                break;
+            }
+        }
+
+        SKL_ASSERT_PERMANENT(nullptr == f_object);
+    }
+
+    //! Is the object from this pool
+    [[nodiscard]] bool owns(const _Object* f_object) const noexcept {
+        //Find the pool that owns this object
+        for (auto [range_start, range_end] : m_pool_ranges) {
+            if ((f_object >= range_start) && (f_object < range_end)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Get total no of objects this pool can allocate
+    [[nodiscard]] u64 capacity() const noexcept {
+        return _BlockSize * m_pools.size();
+    }
+
+    //! Get total no of objects allocated
+    [[nodiscard]] u64 size() const noexcept {
+        u64 total = 0u;
+        for (const auto* pool : m_pools) {
+            total += pool->size();
+        }
+        return total;
+    }
+
+    //! Get total no of bytes allocated from the backing storage
+    [[nodiscard]] u64 mem_usage() const noexcept {
+        return u64(sizeof(pool_t) * m_pools.size())
+             + u64(sizeof(void*) * m_pools.capacity())
+             + u64(sizeof(skl::pair<_Object*, _Object*>) * m_pool_ranges.capacity());
+    }
+
+    //! Get total no of bytes allocated from the backing storage for objects only
+    [[nodiscard]] u64 mem_usage_objects() const noexcept {
+        return (sizeof(_Object) * _BlockSize) * m_pools.size();
+    }
+
+    //! Is the pool empty
+    [[nodiscard]] bool empty() const noexcept {
+        return size() == 0u;
+    }
+
+    //! Clear the pool, destroying all objects if needed
+    void clear() noexcept {
+        m_next_pool_index = 0u;
+        for (auto* pool : m_pools) {
+            pool->clear();
+        }
+        m_pools.clear();
+        m_pool_ranges.clear();
+    }
+
+private:
+    u32                                            m_next_pool_index{0u}; //!< Index of the next pool to allocate from
+    skl::skl_vector<pool_t*, 2u>                   m_pools{};             //!< Vector of pools
+    skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};       //!< Vector of pool ranges for quick lookup
+};
+} // namespace skl
