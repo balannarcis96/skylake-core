@@ -11,7 +11,7 @@
 #include "skl_traits/placement_new"
 
 namespace skl {
-template <typename, u64>
+template <typename, u64, u64>
 class iskl_vector;
 
 extern void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
@@ -25,13 +25,14 @@ constexpr u64 CVectorIncreaseStep = 8U;
 //! Minimal dynamic sized array implementation
 //! To acquire the full (extended) interface call upgrade()
 //!     upgrade() returns an ATPR ref(see <skl_def>) to the extended interface(iskl_vector<T>) of the basic vector<T>
-template <typename _T, u64 _InitialCapacity = CVectorIncreaseStep>
+template <typename _T, u64 _InitialCapacity = CVectorIncreaseStep, u64 _Alignment = alignof(_T)>
 struct skl_vector {
 public:
     static constexpr auto CInitialCapacity = _InitialCapacity;
+    static constexpr auto CAlignment       = _Alignment;
     using value_type                       = _T;
     using size_type                        = u64;
-    using atrp_type                        = iskl_vector<_T, _InitialCapacity>;
+    using atrp_type                        = iskl_vector<_T, _InitialCapacity, _Alignment>;
 
     skl_vector() noexcept {
         initialize(_InitialCapacity);
@@ -201,7 +202,7 @@ private:
             f_initial_capacity = CInitialCapacity;
         }
 
-        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
+        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, _Alignment));
         m_finish      = m_start;
         m_storage_end = m_start + f_initial_capacity;
 
@@ -213,7 +214,7 @@ private:
             f_initial_capacity = f_size + CVectorIncreaseStep;
         }
 
-        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, alignof(_T)));
+        m_start       = static_cast<_T*>(skl_vector_alloc(sizeof(_T) * f_initial_capacity, _Alignment));
         m_finish      = m_start + f_size;
         m_storage_end = m_start + f_initial_capacity;
 
@@ -307,7 +308,7 @@ private:
     _T* m_finish      = nullptr;
     _T* m_storage_end = nullptr;
 
-    template <typename, u64>
+    template <typename, u64, u64>
     friend class iskl_vector;
 };
 } // namespace skl

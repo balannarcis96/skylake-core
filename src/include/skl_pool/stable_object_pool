@@ -1,3 +1,8 @@
+//!
+//! \file stable_object_pool
+//!
+//! \brief A stable object pool implementation
+//!
 #pragma once
 
 #include "skl_fixed_vector_if"
@@ -142,7 +147,7 @@ namespace stable_object_pool {
         }
 
         //! Deallocate the given object
-        //! \remark asserts the object is in range
+        //! \remark Asserts the object is in range
         void deallocate(_Object* f_object) noexcept {
             SKL_ASSERT_CRITICAL(owns(f_object));
 
@@ -276,18 +281,18 @@ public:
             goto new_pool;
         }
 
-        if (m_pools[m_next_pool_index]->full()) {
+        if (m_pools[m_current_pool_index]->full()) {
             goto new_pool;
         }
 
     allocate:
-        SKL_ASSERT(false == m_pools[m_next_pool_index]->full());
-        return m_pools[m_next_pool_index]->allocate_raw_checked();
+        SKL_ASSERT(false == m_pools[m_current_pool_index]->full());
+        return m_pools[m_current_pool_index]->allocate_raw_checked();
 
     new_pool:
         auto* new_block = block_allocator_t::operator()();
         m_pools.upgrade().push_back(new_block);
-        m_next_pool_index = u32(m_pools.size() - 1u);
+        m_current_pool_index = u32(m_pools.size() - 1u);
         m_pool_ranges.upgrade().emplace_back(skl::pair<_Object*, _Object*>(new_block->m_block_start, new_block->m_block_end));
         goto allocate;
     }
@@ -298,7 +303,7 @@ public:
             return nullptr;
         }
 
-        return m_pools[m_next_pool_index];
+        return m_pools[m_current_pool_index];
     }
 
     //! Deallocate the given object
@@ -310,7 +315,7 @@ public:
             const auto& range = m_pool_ranges[i];
             if ((f_object >= range.first) && (f_object < range.second)) {
                 m_pools[i]->deallocate(f_object);
-                m_next_pool_index = u32(i);
+                m_current_pool_index = u32(i);
                 return true;
             }
         }
@@ -319,14 +324,14 @@ public:
     }
 
     //! Deallocate the given object
-    //! \remark asserts the object is in range
+    //! \remark Asserts the object is in range
     //! \remark Asserts that the object is not already deallocated
     void deallocate(_Object* f_object) noexcept {
         //Find the pool that owns this object
         for (u64 i = 0u; i < m_pool_ranges.size(); ++i) {
             const auto [range_start, range_end] = m_pool_ranges[i];
             if ((f_object >= range_start) && (f_object < range_end)) {
-                m_next_pool_index = u32(i);
+                m_current_pool_index = u32(i);
                 m_pools[i]->deallocate(f_object);
                 f_object = nullptr;
                 break;
@@ -381,7 +386,7 @@ public:
 
     //! Clear the pool, destroying all objects if needed
     void clear() noexcept {
-        m_next_pool_index = 0u;
+        m_current_pool_index = 0u;
         for (auto* pool : m_pools) {
             pool->clear();
         }
@@ -390,7 +395,7 @@ public:
     }
 
 private:
-    u32                                            m_next_pool_index{0u}; //!< Index of the next pool to allocate from
+    u32                                            m_current_pool_index{0u}; //!< Index of the next pool to allocate from
     skl::skl_vector<pool_t*, 2u>                   m_pools{};             //!< Vector of pools
     skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};       //!< Vector of pool ranges for quick lookup
 };

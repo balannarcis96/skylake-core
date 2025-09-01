@@ -79,6 +79,10 @@
                         "SKL_ENABLE_LOG_COLORS": {
                             "value": "1",
                             "desc": "Enable SLogger ansi collored output"
+                        },
+                        "SKL_SMP": {
+                            "value": "0",
+                            "desc": "Enable SMP (multi-core) support in Skylake Core"
                         }
                     }
                 }

@@ -10,15 +10,17 @@
 #include "skl_assert"
 #include "skl_vector"
 #include "skl_traits/ctor"
+#include "skl_traits/forward"
 
 namespace skl {
 //! [ATRP] Extended interface for skl_vector<T>
-template <typename _T, u64 _InitialCapacity>
+template <typename _T, u64 _InitialCapacity, u64 _Alignment>
 class iskl_vector final {
 public:
-    using value_type = _T;
-    using size_type  = u64;
-    using atrp_type  = skl_vector<_T, _InitialCapacity>;
+    static constexpr auto CAlignment = _Alignment;
+    using value_type                 = _T;
+    using size_type                  = u64;
+    using atrp_type                  = skl_vector<_T, _InitialCapacity>;
 
     //ATRP
     iskl_vector() noexcept                     = delete;
@@ -67,7 +69,8 @@ public:
     //! Set the size of the vector to \p f_new_size, allocates if necessary
     //! \remark Objects are destroyed or default constructed as needed
     //! \remark resize(0U) is same as clear()
-    void resize(const u64 f_new_size) {
+    template <typename... _Args>
+    void resize(const u64 f_new_size, _Args... f_args) {
         if (f_new_size == 0U) {
             clear();
             return;
@@ -88,9 +91,9 @@ public:
         }
 
         //Construct objects if needed
-        if constexpr (false == __is_trivially_constructible(_T)) {
+        if constexpr (false == __is_trivially_constructible(_T) || (sizeof...(_Args) > 0u)) {
             for (u64 i = old_size; i < f_new_size; ++i) {
-                new (root()->m_start + i) _T();
+                new (root()->m_start + i) _T(skl_fwd<_Args>(f_args)...);
             }
         }
 

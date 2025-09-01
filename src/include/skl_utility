@@ -104,6 +104,12 @@ template <typename T>
     return (f_numerator + f_denominator - T(1)) / f_denominator;
 }
 template <typename T>
+[[nodiscard]] constexpr T integral_floor(T f_numerator, T f_denominator) noexcept
+    requires(is_integer<T>())
+{
+    return f_numerator / f_denominator;
+}
+template <typename T>
 [[nodiscard]] constexpr T set_bit_value(T f_value, T f_bit_index, T f_bit_value) noexcept
     requires(is_integer<T>())
 {

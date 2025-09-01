@@ -19,4 +19,8 @@ void skl_usleep(u32 f_us) noexcept;
 //! Sleep for \p f_seconds_to_sleep seconds
 //! \remark Most precise, might spin if sleep time is very small
 void skl_precise_sleep(double f_seconds_to_sleep) noexcept;
+
+//! Sleep for \p f_ms milliseconds
+//! \remark Busy wait, do not use for long sleeps (max 10 seconds)
+void skl_busy_sleep(u32 f_ms) noexcept;
 } // namespace skl

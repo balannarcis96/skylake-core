@@ -90,6 +90,11 @@ struct skl_fixed_vector_impl {
         return m_finish == m_start;
     }
 
+    //! Is this vector full
+    [[nodiscard]] constexpr bool full() const noexcept {
+        return size() == capacity();
+    }
+
     //! Get the vector capacity (in objects)
     [[nodiscard]] constexpr u64 capacity() const noexcept {
         return _FixedCapacity;

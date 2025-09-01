@@ -1,0 +1,332 @@
+//!
+//! \file skl_dynamic_bitset
+//!
+//! \brief A dynamic size bitset implementation
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_vector_if"
+#include "skl_utility"
+#include "skl_traits/conditional_t"
+
+namespace skl {
+template <bool _DefaultBitValue = false, bool _EnableCounting = false, u64 _Alignment = SKL_CACHE_LINE_SIZE>
+class DynamicBitSet {
+    //! Type of an empty struct (used when a type is not needed)
+    struct bitset_empty_t {
+        bitset_empty_t() noexcept = default;
+        bitset_empty_t(u32) noexcept { }
+    };
+
+public:
+    //! Is the bitset of fixed size
+    static constexpr bool CIsFixedSize = false;
+
+    //! Type of the slice
+    using slice_t = u64;
+
+    //! Number of bits in a slice
+    static constexpr u64 CBitSizeOfSlice = sizeof(slice_t) * 8u;
+
+    //! Bit size of a slice mask
+    static constexpr u64 CBitSizeOfSliceMask = CBitSizeOfSlice - 1u;
+
+    static_assert((CBitSizeOfSlice & CBitSizeOfSliceMask) == 0u, "CBitSizeOfSlice must be a power of two");
+
+    //! Default value for the bits (false = 0, true = 1)
+    static constexpr bool CDefaultBitValue = _DefaultBitValue;
+
+    //! Default value for a slice (all bits set or cleared based on _DefaultBitValue)
+    static constexpr slice_t CDefaultSliceValue = _DefaultBitValue ? ~slice_t(0u) : slice_t(0u);
+
+    //! Container type
+    using container_t = skl_vector<slice_t, CVectorIncreaseStep, _Alignment>;
+
+    //! Counter type (only if counting is enabled)
+    using counter_t = conditional_t<_EnableCounting, u32, bitset_empty_t>;
+
+    DynamicBitSet() noexcept = default;
+    explicit DynamicBitSet(u32 f_bit_size) noexcept
+        : m_size(f_bit_size) {
+        const auto slice_count = integral_ceil<u32>(skl_max<u32>(f_bit_size, 64u), CBitSizeOfSlice);
+        m_slices.upgrade().resize(slice_count);
+
+        // Initialize slices
+        for (auto& slice : m_slices) {
+            slice = CDefaultSliceValue;
+        }
+
+        // Initialize size
+        if constexpr (_EnableCounting && _DefaultBitValue) {
+            m_count = f_bit_size;
+        }
+    }
+
+    //! Get the count of slices
+    [[nodiscard]] constexpr u32 slices_count() const noexcept {
+        return u32(m_slices.size());
+    }
+
+    //! Get the count of set bits
+    [[nodiscard]] constexpr slice_t count() const noexcept {
+        if constexpr (_EnableCounting) {
+            return m_count;
+        } else {
+            const auto slice_count       = m_slices.size();
+            const auto CLeftOverBits     = slice_t(m_size & CBitSizeOfSliceMask);
+            const auto CLeftOverBitsMask = (slice_t(slice_t(1u) << CLeftOverBits) - 1u);
+
+            slice_t set_count = 0u;
+            if (CLeftOverBits > 0u) {
+                for (u32 i = 0u; i < slice_count; ++i) {
+                    const auto is_last = (i == (slice_count - 1u));
+                    if (is_last) {
+                        set_count += __builtin_popcountl(slice_t(m_slices[i] & CLeftOverBitsMask));
+                    } else {
+                        set_count += __builtin_popcountl(slice_t(m_slices[i]));
+                    }
+                }
+            } else {
+                for (const auto slice : m_slices) {
+                    set_count += __builtin_popcountl(slice);
+                }
+            }
+
+            return set_count;
+        }
+    }
+
+    //! Get the number of bits in the bitset
+    [[nodiscard]] constexpr u32 size() noexcept {
+        return m_size;
+    }
+
+    //! Set the bit at \p f_index
+    //! \return True if the bit was already set, false otherwise
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool set(u32 f_index) noexcept {
+        const u32 slice_index = f_index / CBitSizeOfSlice;
+        const u32 bit_index   = f_index & CBitSizeOfSliceMask;
+
+        // Validate index
+        SKL_ASSERT(validate_bit_index(f_index));
+
+        auto& slice = m_slices[slice_index];
+
+        const auto mask      = slice_t(1u) << bit_index;
+        const auto old_value = (slice & mask) != 0u;
+        if constexpr (_EnableCounting) {
+            m_count += slice_t(false == old_value);
+        }
+        slice |= mask;
+
+        return old_value;
+    }
+
+    //! Unset the bit at \p f_index
+    //! \return True if the bit was previously set, false otherwise
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool unset(u32 f_index) noexcept {
+        const u32  slice_index = f_index / CBitSizeOfSlice;
+        const auto bit_index   = f_index & CBitSizeOfSliceMask;
+
+        // Validate index
+        SKL_ASSERT(validate_bit_index(f_index));
+
+        auto& slice = m_slices[slice_index];
+
+        const auto mask      = slice_t(1u) << bit_index;
+        const auto old_value = (slice & mask) != 0u;
+        if constexpr (_EnableCounting) {
+            m_count -= slice_t(old_value);
+        }
+        slice &= ~mask;
+
+        return old_value;
+    }
+
+    //! Test if the bit at \p f_index is set
+    //! \remark Asserts that \p f_index is valid
+    [[nodiscard]] constexpr bool test(u32 f_index) const noexcept {
+        const u32  slice_index = f_index / CBitSizeOfSlice;
+        const auto bit_index   = f_index & CBitSizeOfSliceMask;
+
+        // Validate index
+        SKL_ASSERT(validate_bit_index(f_index));
+
+        const auto& slice = m_slices[slice_index];
+        const auto  mask  = slice_t(1u) << bit_index;
+        return (slice & mask) != 0u;
+    }
+
+    //! Reset the bitset (set all bits to default value)
+    constexpr void reset() noexcept {
+        for (auto& slice : m_slices) {
+            slice = CDefaultSliceValue;
+        }
+
+        if constexpr (_EnableCounting) {
+            if constexpr (_DefaultBitValue) {
+                m_count = m_size;
+            } else {
+                m_count = 0u;
+            }
+        }
+    }
+
+    //! Flip all bits in the bitset
+    constexpr void flip_all() noexcept {
+        for (auto& slice : m_slices) {
+            slice = ~slice;
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = slice_t(m_size) - m_count;
+        }
+    }
+
+    //! Set all bits to \p _Value
+    template <bool _Value>
+    constexpr void set_all_to() noexcept {
+        static constexpr slice_t CValue = _Value ? ~slice_t(0u) : slice_t(0u);
+        for (auto& slice : m_slices) {
+            slice = CValue;
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = slice_t(_Value ? m_size : 0u);
+        }
+    }
+
+    //! Set all bits to \p f_value
+    constexpr void set_all_to(bool f_value) noexcept {
+        const slice_t value = f_value ? ~slice_t(0u) : slice_t(0u);
+        for (auto& slice : m_slices) {
+            slice = value;
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = slice_t(f_value ? m_size : 0u);
+        }
+    }
+
+    //! Get the slice at \p f_index
+    [[nodiscard]] constexpr slice_t& slice(u32 f_index) noexcept {
+        return m_slices[f_index];
+    }
+
+    //! Get the slice at \p f_index
+    [[nodiscard]] constexpr const slice_t& slice(u32 f_index) const noexcept {
+        return m_slices[f_index];
+    }
+
+    //! Grow the bitset to the specified size
+    //! \param f_new_size Minimum new size of the bitset
+    constexpr void grow(u32 f_new_size) noexcept {
+        // If new size is less than or equal to current size, do nothing
+        if (f_new_size <= m_size) {
+            return;
+        }
+
+        // Calculate new slice count
+        const auto new_slice_count     = integral_ceil<u32>(f_new_size, CBitSizeOfSlice);
+        const auto current_slice_count = m_slices.size();
+
+        // Resize slices if needed
+        if (new_slice_count > current_slice_count) {
+            m_slices.upgrade().resize(new_slice_count, CDefaultSliceValue);
+        }
+
+        // If growing and need to set new bits
+        if constexpr (_DefaultBitValue) {
+            if (new_slice_count == current_slice_count) {
+                // Same slice count, just need to set bits in the last slice
+                const auto delta = f_new_size - m_size;
+                SKL_ASSERT(delta < CBitSizeOfSlice);
+                const auto start_bit  = m_size & CBitSizeOfSliceMask;
+                const auto mask       = slice_t(slice_t((slice_t(1u) << delta) - 1u) << start_bit);
+                m_slices.back()      |= mask;
+
+                if constexpr (_EnableCounting) {
+                    m_count += delta;
+                }
+            } else {
+                if (m_size > 0u) {
+                    const auto used_bits_in_last_existing_slice = (m_size & CBitSizeOfSliceMask);
+                    if (0u < (CBitSizeOfSlice - used_bits_in_last_existing_slice)) {
+                        const auto last_existing_slice_mask   = ~slice_t((slice_t(1u) << used_bits_in_last_existing_slice) - 1u);
+                        const auto last_existing_slice_index  = current_slice_count - 1u;
+                        m_slices[last_existing_slice_index]  |= last_existing_slice_mask;
+                        if constexpr (_EnableCounting) {
+                            m_count += CBitSizeOfSlice - used_bits_in_last_existing_slice;
+                        }
+                    }
+                }
+
+                const auto CLeftOverBits = f_new_size & CBitSizeOfSliceMask;
+                if (CLeftOverBits > 0u) {
+                    const auto CLeftOverBitsMask = slice_t(slice_t(slice_t(1u) << CLeftOverBits) - 1u);
+                    for (u32 i = current_slice_count; i < new_slice_count; ++i) {
+                        const auto is_last = (i == (new_slice_count - 1u));
+                        if (is_last) {
+                            m_slices[i] |= CLeftOverBitsMask;
+                            if constexpr (_EnableCounting) {
+                                m_count += CLeftOverBits;
+                            }
+                        } else {
+                            m_slices[i] = CDefaultSliceValue;
+                            if constexpr (_EnableCounting) {
+                                m_count += CBitSizeOfSlice;
+                            }
+                        }
+                    }
+                } else {
+                    for (u32 i = current_slice_count; i < new_slice_count; ++i) {
+                        m_slices[i] = CDefaultSliceValue;
+                    }
+
+                    if constexpr (_EnableCounting) {
+                        m_count += (new_slice_count - current_slice_count) * CBitSizeOfSlice;
+                    }
+                }
+            }
+        }
+
+        // Update size
+        m_size = f_new_size;
+    }
+
+    //! Clear the bitset (removes all slices)
+    void clear() noexcept {
+        m_slices.upgrade().clear();
+        m_size = 0u;
+        if constexpr (_EnableCounting) {
+            m_count = 0u;
+        }
+    }
+
+private:
+#if SKL_BUILD_DEV
+    [[nodiscard]] constexpr bool validate_bit_index(u32 f_index) const noexcept {
+        const u32  slice_index   = f_index / CBitSizeOfSlice;
+        const u32  bit_index     = f_index & CBitSizeOfSliceMask;
+        const u32  slice_count   = m_slices.size();
+        const auto CLeftOverBits = (CBitSizeOfSlice - (m_size & CBitSizeOfSliceMask));
+
+        return ((slice_index < slice_count)
+                && ((slice_index < (slice_count - 1u))
+                    || (bit_index < (CBitSizeOfSlice - CLeftOverBits))));
+    }
+#else
+    static constexpr bool validate_bit_index(u32 f_index) noexcept {
+        return true;
+    }
+#endif
+
+private:
+    container_t m_slices;    //!< Slices of the bitset
+    u32         m_size{0u};  //!< Number of bits in the bitset
+    counter_t   m_count{0u}; //!< Count of set bits (only if counting is enabled)
+};
+} // namespace skl

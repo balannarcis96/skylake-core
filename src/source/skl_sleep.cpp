@@ -10,6 +10,7 @@
 
 #include <unistd.h>
 
+#include "skl_assert"
 #include "skl_sleep"
 
 namespace skl {
@@ -43,6 +44,28 @@ void skl_precise_sleep(double f_seconds_to_sleep) noexcept {
         ts.tv_sec  = static_cast<time_t>(f_seconds_to_sleep);
         ts.tv_nsec = static_cast<long>((f_seconds_to_sleep - double(ts.tv_sec)) * 1e9);
         nanosleep(&ts, nullptr);
+    }
+}
+
+void skl_busy_sleep(u32 f_ms) noexcept {
+    if (f_ms == 0) {
+        return;
+    }
+
+    SKL_ASSERT(f_ms < 10000); // 10 seconds max
+
+    auto       start           = std::chrono::steady_clock::now();
+    const auto target_duration = std::chrono::milliseconds(f_ms);
+
+    while (true) {
+        auto now = std::chrono::steady_clock::now();
+
+        std::chrono::duration<double, std::milli> elapsed = now - start;
+        if (elapsed >= target_duration) {
+            break;
+        }
+
+        __builtin_ia32_pause();
     }
 }
 } // namespace skl

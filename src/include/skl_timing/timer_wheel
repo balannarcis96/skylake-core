@@ -1,0 +1,497 @@
+//!
+//! \file timer_wheel
+//!
+//! \brief A timer wheel implementation
+//!
+#pragma once
+
+#include "skl_def"
+#include "skl_int"
+#include "skl_epoch"
+#include "skl_static_bitset"
+#include "skl_dynamic_bitset"
+#include "skl_pair"
+#include "skl_result"
+#include "skl_utility"
+#include "skl_traits/forward"
+#include "skl_vector_if"
+#include "skl_timing/timer_wheel_handle"
+
+namespace skl {
+//@TODO: Add support for processing up to N entries per tick
+//        This would allow the caller to tick the wheel in a determined time frame
+//   Problem: The wheel will need "slack" slots to allow for this
+//            i.e. if the currect tick ticks up to N entries but the current slot has N + M entries
+//            then the M entries will need to be deferred to the next tick
+//            All allocations will need to be done with this in mind
+//            i.e. if the wheel is K slots behind, the a full time allocation must not wrap around into
+//            any of the next K slots, BehindSlots are introduced to handle this
+//            A max of BehindSlots is allowed, SlackSlots = BehindSlots
+//            If the wheel is more then BehindSlots behind, it will restrict allocations that fall into the BehindSlots slots
+//            The caller must do one or more catch-up tick/s to get the wheel back into a valid state
+
+//! Timer wheel
+//! \tparam _UserData User data type that will be stored in the wheel entries
+//! \tparam _WheelTimeMs Total time the wheel can defer in milliseconds (must be > 1ms and divisible by _GranularityMs)
+//! \tparam _GranularityMs Granularity of the wheel in milliseconds
+//! \tparam _TickToleranceMs Tolerance in milliseconds for tick time (to allow for slightly delayed or early ticks by up to this amount)
+//! \tparam _MaxEntriesPerWheelSlot Maximum number of entries per wheel slot [if 0 then unlimited/dynamic]
+//! \tparam _EnableSlotDisableFlag Enable a disabled flag on each slot to allow skipping processing of the slot (via BitSet)
+//! \tparam _Alignment Alignment of the wheel storage (default: cache line size)
+template <typename _UserData,
+          u32  _WheelTimeMs,
+          u32  _GranularityMs,
+          u32  _TickToleranceMs       = 0u,
+          bool _EnableSlotDisableFlag = true,
+          u64  _Alignment             = SKL_CACHE_LINE_SIZE>
+    requires((_WheelTimeMs > 1u)
+             && (_GranularityMs > 0u)
+             && (_WheelTimeMs % _GranularityMs == 0u))
+class TimerWheel {
+public:
+    //! Total wheel time in milliseconds
+    static constexpr u32 CWheelTimeMs = _WheelTimeMs;
+
+    //! Wheel granularity in milliseconds
+    static constexpr u32 CGranularityMs = _GranularityMs;
+
+    static_assert(_TickToleranceMs <= integral_ceil(CGranularityMs, 2u), "_TickToleranceMs must be <= ceil(CGranularityMs / 2)");
+
+    //! Number of slots in the wheel
+    static constexpr u32 CWheelSlotsCount = CWheelTimeMs / CGranularityMs;
+
+    // Ensure the wheel slots count fits in u16
+    static_assert(CWheelSlotsCount <= 0xFFFFu, "CWheelSlotsCount must be <= 65535");
+
+    //! Type of the slot enable bitset (if enabled)
+    struct wheel_enable_bitset_empty_t { };
+
+    //! Type of the slot bitset
+    using slot_bitset_t = DynamicBitSet<false, true, _Alignment>;
+
+    //! Type of the wheel enable bitset
+    using wheel_enable_bitset_t = conditional_t<_EnableSlotDisableFlag,
+                                                slot_bitset_t[CWheelSlotsCount],
+                                                wheel_enable_bitset_empty_t>;
+
+    //! Type of the wheel entry
+    using wheel_entry_t = _UserData;
+
+    //! Type of the wheel slot
+    using wheel_slot_t = skl_vector<wheel_entry_t, 1024u, _Alignment>;
+
+    //! Wheel storage type
+    using wheel_t = wheel_slot_t[CWheelSlotsCount];
+
+    //! Result type for tick()
+    template <bool _Checked = false>
+    struct tick_result_t {
+        SKL_NO_MOVE_OR_COPY(tick_result_t);
+
+        ~tick_result_t() noexcept {
+            if (nullptr != m_slot) [[likely]] {
+                m_wheel.advance();
+                m_slot = nullptr;
+            }
+        }
+
+        [[nodiscard]] operator bool() const noexcept {
+            return (nullptr != m_slot);
+        }
+
+        [[nodiscard]] wheel_slot_t& operator*() noexcept {
+            SKL_ASSERT_CRITICAL(nullptr != m_slot);
+            return *m_slot;
+        }
+        [[nodiscard]] const wheel_slot_t& operator*() const noexcept {
+            SKL_ASSERT_CRITICAL(nullptr != m_slot);
+            return *m_slot;
+        }
+
+        [[nodiscard]] wheel_slot_t* operator->() noexcept {
+            SKL_ASSERT_CRITICAL(nullptr != m_slot);
+            return m_slot;
+        }
+        [[nodiscard]] const wheel_slot_t* operator->() const noexcept {
+            SKL_ASSERT_CRITICAL(nullptr != m_slot);
+            return m_slot;
+        }
+
+    private:
+        tick_result_t(wheel_slot_t* f_slot, TimerWheel& f_wheel) noexcept
+            : m_slot(f_slot)
+            , m_wheel(f_wheel) {
+            if constexpr (_Checked) {
+                SKL_ASSERT_CRITICAL(nullptr != m_slot);
+            }
+        }
+
+    private:
+        wheel_slot_t* m_slot = nullptr; //!< Pointer to the slot
+        TimerWheel&   m_wheel;          //!< Reference to the wheel
+
+        friend TimerWheel;
+    };
+
+    TimerWheel() noexcept {
+        advance<true>(0u);
+    }
+
+    SKL_NO_MOVE_OR_COPY_DEFAULT_DTOR(TimerWheel);
+
+    //! Tick the wheel and process the current slot using the given functor
+    //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
+    //! \param f_now Current time (epoch time point)
+    //! \returns false if no tick occurred
+    template <typename _Functor>
+    [[nodiscard]] bool tick(epoch_time_point_t f_now = get_current_epoch_time()) noexcept {
+        return tick_ex<false, _Functor>(f_now);
+    }
+
+    //! Tick the wheel and process the current slot using the given functor
+    //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
+    //! \param f_now Current time (epoch time point)
+    //! \returns false if no tick occurred
+    template <typename _Functor>
+    [[nodiscard]] bool tick(epoch_time_point_t f_now, const _Functor& f_functor) {
+        return tick_ex<false, void, _Functor>(f_now, f_functor);
+    }
+
+    //! Tick the wheel and process the current slot using the given functor (the caller guarantees that a tick can occur)
+    //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
+    //! \param f_now Current time (epoch time point)
+    //! \returns false if no tick occurred
+    template <typename _Functor>
+    void tick_checked(epoch_time_point_t f_now) {
+        (void)tick_ex<false, _Functor>(f_now);
+    }
+
+    //! Tick the wheel and process the current slot using the given functor (forces a tick even if the granularity has not elapsed)
+    //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
+    //! \param f_now Current time (epoch time point)
+    //! \returns false if no tick occurred
+    template <typename _Functor>
+    void tick_force(epoch_time_point_t f_now) noexcept {
+        (void)tick_ex<true, _Functor>(f_now);
+    }
+
+    //! Get the number of ticks since creation
+    [[nodiscard]] u64 tick_count() const noexcept {
+        return m_tick_count;
+    }
+
+    //! Set the start time for the wheel (resets the last tick time to the given time)
+    void set_start_time(skl::epoch_time_point_t f_start_time = get_current_epoch_time()) noexcept {
+        m_last_tick_time = f_start_time;
+    }
+
+    //! Can the wheel tick (has the granularity elapsed since last tick)?
+    [[nodiscard]] bool can_tick(skl::epoch_time_point_t f_now = get_current_epoch_time()) const noexcept {
+        const auto elapsed = f_now - m_last_tick_time;
+        if constexpr (_TickToleranceMs == 0u) {
+            return (elapsed >= CGranularityMs);
+        } else {
+            return elapsed >= (CGranularityMs - _TickToleranceMs);
+        }
+    }
+
+    //! Get the the slot that is about to be processed (i.e. the pending slot)
+    [[nodiscard]] wheel_slot_t& pending_slot() noexcept {
+        return m_wheel[m_current_slot];
+    }
+
+    //! Calculate the granularity count for a given delay in milliseconds
+    //! \returns Slot index in the range [0, CWheelSlotsCount - 1] based on the given delay
+    //! \remark If the delay is less than CGranularityMs, 0 is returned
+    //! \remark If the delay is greater than CWheelTimeMs, CWheelSlotsCount - 1 is returned
+    [[nodiscard]] constexpr static u32 calculate_granularity_count(u64 f_delay_ms) noexcept {
+        return skl_clamp<u32>(integral_floor<u64>(f_delay_ms, CGranularityMs), 0u, u64(CWheelSlotsCount - 1u));
+    }
+
+    //! Allocate a new entry in the wheel with a delay of \p f_delay_ms milliseconds (max deviation of ~CGranularityMs)
+    //! \remark If the \p f_delay_ms is less than CGranularityMs, the entry is added to the current slot (i.e. no delay)
+    //! \remark If the \p f_delay_ms is greater than CWheelTimeMs, the entry is added to the last slot (i.e. max delay)
+    //! \param f_delay_ms Delay in milliseconds before the entry is processed
+    template <typename... _Args>
+    [[nodiscard]] pair<timer_wheel_handle_t, _UserData*> allocate(u64 f_delay_ms, _Args... f_args) noexcept {
+        const u32 slot_offset = calculate_granularity_count(f_delay_ms);
+
+        // Calculate the slot index
+        auto slot_index = u32(m_current_slot + slot_offset);
+
+        // Wrap around
+        if (slot_index >= CWheelSlotsCount) {
+            slot_index -= CWheelSlotsCount;
+        }
+
+        // Get the slot
+        auto& slot = m_wheel[slot_index];
+
+        // Add the entry
+        slot.upgrade().emplace_back(skl_fwd<_Args>(f_args)...);
+
+        // Get the entry index
+        const auto new_count   = slot.size();
+        const u32  entry_index = u32(new_count - 1u);
+
+        // Alloc flags if needed
+        if constexpr (_EnableSlotDisableFlag) {
+            auto& flags = m_slot_enable_flags[slot_index];
+            if (flags.size() < new_count) [[unlikely]] {
+                flags.grow(new_count + 1024u); //Grow by 1024u bits at a time
+            }
+
+            SKL_ASSERT_PERMANENT(false == flags.set(entry_index));
+        }
+
+        // Get the generation
+        const auto generation = m_generations[slot_index];
+
+        return {
+            timer_wheel_handle_t{.slot_index  = u16(slot_index),
+                           .generation  = generation,
+                           .entry_index = entry_index},
+            &slot.back()
+        };
+    }
+
+    //! Validate a wheel handle
+    //! \returns true if the handle is valid
+    //! \returns false if the handle is invalid
+    template <bool _ValidateGeneration = true>
+    [[nodiscard]] bool validate_handle(const timer_wheel_handle_t& f_handle) const noexcept {
+        // Validate the slot index
+        if (f_handle.slot_index >= CWheelSlotsCount) [[unlikely]] {
+            return false;
+        }
+
+        // Validate the generation (if enabled)
+        u8 valid_generation = 1u;
+        if constexpr (_ValidateGeneration) {
+            valid_generation = u8(f_handle.generation == m_generations[f_handle.slot_index]);
+        }
+
+        // Validate the entry index
+        const u8 valid_entry_index = u8(f_handle.entry_index < m_wheel[f_handle.slot_index].size());
+
+        [[likely]] return (valid_generation & valid_entry_index) != 0u;
+    }
+
+    //! Validate a wheel handle (generation check only)
+    //! \returns true if the handle is valid (generation check only)
+    //! \returns false if the handle is invalid (generation check only)
+    [[nodiscard]] bool validate_handle_generation(const timer_wheel_handle_t& f_handle) const noexcept {
+        return f_handle.generation == m_generations[f_handle.slot_index];
+    }
+
+    //! Disable an entry in the wheel (if _EnableSlotDisableFlag is true)
+    template <bool _CheckOnlyGeneration = false>
+    void disable_entry(const timer_wheel_handle_t& f_handle) noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        if constexpr (false == _CheckOnlyGeneration) {
+            if (validate_handle(f_handle)) {
+                m_slot_enable_flags[f_handle.slot_index].unset(f_handle.entry_index);
+            }
+        } else {
+            if (validate_handle_generation(f_handle)) {
+                m_slot_enable_flags[f_handle.slot_index].unset(f_handle.entry_index);
+            }
+        }
+    }
+
+    //! Disable an entry in the wheel (if _EnableSlotDisableFlag is true)
+    //! \remark This method asserts the handle is valid via validate_handle()
+    void disable_entry_checked(const timer_wheel_handle_t& f_handle) noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        SKL_ASSERT(validate_handle(f_handle));
+        m_slot_enable_flags[f_handle.slot_index].unset(f_handle.entry_index);
+    }
+
+    //! Check if an entry is enabled in the wheel (if _EnableSlotDisableFlag is true)
+    //! \returns SKL_SUCCESS if the entry is enabled
+    //! \returns SKL_ERR_STATE if the entry is disabled
+    //! \returns SKL_ERR_PARAMS if the handle is invalid
+    [[nodiscard]] skl_status is_entry_enabled(const timer_wheel_handle_t& f_handle) const noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        if (validate_handle(f_handle)) {
+            if (m_slot_enable_flags[f_handle.slot_index].test(f_handle.entry_index)) {
+                return SKL_SUCCESS;
+            }
+
+            return SKL_ERR_STATE;
+        }
+
+        return SKL_ERR_PARAMS;
+    }
+
+    //! Check if an entry is enabled in the wheel (if _EnableSlotDisableFlag is true)
+    //! \returns SKL_SUCCESS if the entry is enabled
+    //! \returns SKL_ERR_STATE if the entry is disabled
+    //! \remark This method asserts the handle is valid via validate_handle()
+    [[nodiscard]] skl_status is_entry_enabled_checked(const timer_wheel_handle_t& f_handle) const noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        SKL_ASSERT(validate_handle(f_handle));
+
+        if (m_slot_enable_flags[f_handle.slot_index].test(f_handle.entry_index)) {
+            return SKL_SUCCESS;
+        }
+
+        return SKL_ERR_STATE;
+    }
+
+#if SKL_CORE_TESTING
+    //! [Testing] Get the slot at the given index
+    [[nodiscard]] wheel_slot_t& slot(u32 f_slot_index) noexcept {
+        SKL_ASSERT_CRITICAL(f_slot_index < CWheelSlotsCount);
+        return m_wheel[f_slot_index];
+    }
+
+    //! [Testing] Get the slot enable bitset at the given index
+    [[nodiscard]] slot_bitset_t& bitset(u32 f_slot_index) noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        SKL_ASSERT_CRITICAL(f_slot_index < CWheelSlotsCount);
+        return m_slot_enable_flags[f_slot_index];
+    }
+
+    //! [Testing] Get the slot set bit at the given index
+    [[nodiscard]] u32 get_set_bits_count(u32 f_slot_index) noexcept
+        requires(_EnableSlotDisableFlag)
+    {
+        SKL_ASSERT_CRITICAL(f_slot_index < CWheelSlotsCount);
+        return m_slot_enable_flags[f_slot_index].count();
+    }
+
+    //! [Testing] Get the current pending slot index
+    [[nodiscard]] u32 pending_slot_index() noexcept {
+        return u32(m_current_slot);
+    }
+#endif
+
+private:
+    //! Tick the wheel and process the current slot using the given functor
+    //! \tparam _Checked If true, no check is made to see if the wheel can tick (i.e. the caller guarantees that it can tick)
+    //! \tparam _Functor Functor type to process each (enabled) entry in the slot (must implement: static void operator()(wheel_entry_t&))
+    //! \param f_now Current time (epoch time point in milliseconds)
+    //! \returns false if no tick occurred (only if _Checked)
+    template <bool _Checked, typename _StaticFunctor, typename... _Functor>
+    [[nodiscard]] bool tick_ex(epoch_time_point_t f_now, const _Functor&... f_functor) {
+        constexpr bool _HasStaticFunctor = false == __is_same(_StaticFunctor, void);
+        static_assert(_HasStaticFunctor || (sizeof...(f_functor) == 1u), "If no static functor is provided, exactly one functor must be provided");
+
+        if constexpr (false == _Checked) {
+            if (false == can_tick(f_now)) {
+                return false;
+            }
+        }
+
+        if constexpr (false == _EnableSlotDisableFlag) {
+            auto& slot = m_wheel[m_current_slot];
+            for (auto& entry : slot) {
+                if constexpr (_HasStaticFunctor) {
+                    _StaticFunctor::operator()(entry);
+                } else {
+                    call_functor(f_functor..., entry);
+                }
+            }
+        } else {
+            auto& flags = m_slot_enable_flags[m_current_slot];
+
+            constexpr u32 CBitSizeOfSlice = slot_bitset_t::CBitSizeOfSlice;
+            static_assert(CBitSizeOfSlice == 64u);
+
+            const auto enabled_count = flags.count();
+            if (0u < enabled_count) {
+                auto& slot = m_wheel[m_current_slot];
+
+                u32 i = 0u;
+
+                //Process one bitset slice at a time (64 bits)
+                for (u32 slice_index = 0u; (i + CBitSizeOfSlice) < slot.size(); i += CBitSizeOfSlice, ++slice_index) {
+                    //Process all set bits in the slice (if any)
+                    auto slice = flags.slice(slice_index);
+                    while (slice) {
+                        const auto k = __builtin_ctzll(slice);
+                        if constexpr (_HasStaticFunctor) {
+                            _StaticFunctor::operator()(slot[i + k]);
+                        } else {
+                            call_functor(f_functor..., slot[i + k]);
+                        }
+                        slice &= slice - 1; // Clear least significant set bit
+                    }
+                }
+
+                //Process remaining
+                for (; i < slot.size(); ++i) {
+                    if (flags.test(i)) {
+                        if constexpr (_HasStaticFunctor) {
+                            _StaticFunctor::operator()(slot[i]);
+                        } else {
+                            call_functor(f_functor..., slot[i]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Advance the wheel
+        advance(f_now);
+
+        return true;
+    }
+
+    //! Call the given functor with the given entry
+    template <typename _Functor>
+    void call_functor(_Functor& f_functor, wheel_entry_t& f_entry) noexcept {
+        f_functor(f_entry);
+    }
+
+    //! Advance the wheel to the next slot
+    //! \remark The caller must ensure can_tick() returns true before calling this method
+    //! \remark This method will clear the current slot and move to the next slot
+    //! \remark All handles into the current slot are invalid after this call
+    template <bool _OnConstruction = false>
+    void advance(skl::epoch_time_point_t f_now) noexcept {
+        // Clear the current slot
+        m_wheel[m_current_slot].clear();
+
+        // Reset the slot enable flags (to true)
+        if constexpr (_EnableSlotDisableFlag) {
+            m_slot_enable_flags[m_current_slot].clear();
+        }
+
+        if constexpr (false == _OnConstruction) {
+            // Increment the generation for the current slot
+            ++m_generations[m_current_slot];
+
+            // Advance to the next slot
+            ++m_current_slot;
+
+            // Wrap around
+            if (m_current_slot >= CWheelSlotsCount) {
+                m_current_slot = 0u;
+            }
+        }
+
+        // Update the last tick time
+        m_last_tick_time = f_now;
+
+        if constexpr (false == _OnConstruction) {
+            // Increment the tick count
+            ++m_tick_count;
+        }
+    }
+
+private:
+    SKL_CACHE_ALIGNED wheel_t                   m_wheel{};                       //!< The timer wheel
+    u16                                         m_generations[CWheelSlotsCount]; //!< Generations for each slot (for handle validation)
+    u64                                         m_last_tick_time{0ull};          //!< The last tick time in milliseconds
+    u64                                         m_current_slot{0ull};            //!< The current slot index in the wheel
+    u64                                         m_tick_count{0ull};              //!< The number of ticks since creation
+    [[no_unique_address]] wheel_enable_bitset_t m_slot_enable_flags{};           //!< The slot enable bitset (if enabled)
+};
+} // namespace skl

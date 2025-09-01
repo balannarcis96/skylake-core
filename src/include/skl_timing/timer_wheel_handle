@@ -1,0 +1,17 @@
+//!
+//! \file timer_wheel_handle
+//!
+//! \brief Handle to a timer wheel entry
+//!
+#pragma once
+
+#include "skl_int"
+
+namespace skl {
+//! Handle to a timer wheel entry
+struct timer_wheel_handle_t {
+    u16 slot_index;  //!< Index of the slot in the wheel
+    u16 generation;  //!< Generation of the entry (for validation)
+    u32 entry_index; //!< Index of the entry in the slot
+};
+} // namespace skl
