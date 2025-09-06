@@ -1,4 +1,4 @@
-#include <skl_pool/stable_object_pool.hpp>
+#include <skl_pool/stable_object_pool>
 
 #include <gtest/gtest.h>
 #include <vector>

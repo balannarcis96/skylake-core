@@ -16,6 +16,8 @@ constexpr skl_status_raw SKL_CUSTOM_ERR_MAX = -10000;
 //All core statuses
 enum ESklCoreStatus : skl_status_raw {
     //Error statuses
+    SKL_ERR_EXISTING   = -35,
+    SKL_ERR_DUPLICATE  = -34,
     SKL_ERR_CORRUPT    = -33,
     SKL_ERR_CONFIG     = -32,
     SKL_ERR_OVERFLOW   = -31,
@@ -65,6 +67,8 @@ enum ESklCoreStatus : skl_status_raw {
 constexpr skl_status_raw SKL_CUSTOM_SUCCESS_MIN = 10000;
 
 struct [[nodiscard]] skl_status {
+    using to_string_fn_t = const char*(skl_status_raw) noexcept;
+
     constexpr skl_status(skl_status_raw value) noexcept
         : m_status(value) { }
 
@@ -102,6 +106,9 @@ struct [[nodiscard]] skl_status {
     {
         return static_cast<_Enum>(m_status);
     }
+
+    //! Register a custom handler for converting custom skl_status value to string
+    static void register_custom_to_string_handler(to_string_fn_t* f_function_ptr) noexcept;
 
 private:
     skl_status_raw m_status;
