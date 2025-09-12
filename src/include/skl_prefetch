@@ -1,0 +1,95 @@
+//!
+//! \file skl_prefetch
+//!
+//! \brief Prefetch utilities
+//!     Uses only __builtin_prefetch - no standard library headers required.
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+//!
+//! \brief Cache locality levels for prefetch hints
+//!
+//! Controls which cache level the prefetched data should target.
+//! Higher locality numbers mean closer to the CPU (faster access).
+enum EPrefetchLocality : unsigned int {
+    PREFETCH_NON_TEMPORAL = 0u, //!< Bypass cache entirely - for streaming/write-once data
+    PREFETCH_L3_CACHE     = 1u, //!< Prefetch to L3 cache (shared across cores)
+    PREFETCH_L2_CACHE     = 2u, //!< Prefetch to L2 cache (per-core private)
+    PREFETCH_L1_CACHE     = 3u  //!< Prefetch to L1 cache (fastest, smallest, per-core)
+};
+
+//!
+//! \brief Memory access pattern hint for prefetch
+//!
+//! Tells the prefetcher whether data will be read or written to.
+//! Write prefetching may load cache line in exclusive state on some architectures.
+enum EPrefetchAccess : unsigned int {
+    PREFETCH_READ  = 0u, //!< Data will be read (most common case)
+    PREFETCH_WRITE = 1u  //!< Data will be written to (may optimize cache coherency)
+};
+
+//!
+//! \brief Generic prefetch function with full control over locality and access pattern
+//! \tparam _Locality Target cache level (default: L1_CACHE)
+//! \tparam _Access Memory access type (default: READ)
+//! \param f_ptr Pointer to memory address to prefetch
+//!
+//! Most flexible prefetch function. Use this when you need precise control
+//! over cache targeting and access patterns.
+template <EPrefetchLocality _Locality = PREFETCH_L1_CACHE, EPrefetchAccess _Access = PREFETCH_READ>
+[[clang::always_inline]] inline void skl_prefetch(const void* f_ptr) noexcept {
+    __builtin_prefetch(f_ptr, static_cast<int>(_Access), static_cast<int>(_Locality));
+}
+
+//! \brief Prefetch data for read access into L1 cache
+[[clang::always_inline]] inline void skl_prefetch_l1_read(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L1_CACHE, PREFETCH_READ>(f_ptr);
+}
+
+//! \brief Prefetch data for read access into L2 cache
+[[clang::always_inline]] inline void skl_prefetch_l2_read(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L2_CACHE, PREFETCH_READ>(f_ptr);
+}
+
+//! \brief Prefetch data for read access into L3 cache
+[[clang::always_inline]] inline void skl_prefetch_l3_read(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L3_CACHE, PREFETCH_READ>(f_ptr);
+}
+
+//! \brief Prefetch data for write access into L1 cache
+[[clang::always_inline]] inline void skl_prefetch_l1_write(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L1_CACHE, PREFETCH_WRITE>(f_ptr);
+}
+
+//! \brief Prefetch data for write access into L2 cache
+[[clang::always_inline]] inline void skl_prefetch_l2_write(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L2_CACHE, PREFETCH_WRITE>(f_ptr);
+}
+
+//! \brief Prefetch data for write access into L3 cache
+[[clang::always_inline]] inline void skl_prefetch_l3_write(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_L3_CACHE, PREFETCH_WRITE>(f_ptr);
+}
+
+//!
+//! \brief Non-temporal read prefetch (streaming reads)
+//! \param f_ptr Memory address to prefetch
+//!
+//! Bypasses cache hierarchy for read-once data patterns.
+//! Prevents cache pollution but data won't be cached for reuse.
+//! Typical use: large sequential scans, streaming algorithms, one-time processing.
+[[clang::always_inline]] inline void skl_prefetch_read_non_temporal(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_NON_TEMPORAL, PREFETCH_READ>(f_ptr);
+}
+
+//!
+//! \brief Non-temporal write prefetch (streaming writes)
+//! \param f_ptr Memory address to prefetch
+//!
+//! For write-once data that won't be read again. Bypasses cache to avoid pollution.
+//! Typical use: logging, serialization, large result generation.
+[[clang::always_inline]] inline void skl_prefetch_write_non_temporal(const void* f_ptr) noexcept {
+    skl_prefetch<PREFETCH_NON_TEMPORAL, PREFETCH_WRITE>(f_ptr);
+}
