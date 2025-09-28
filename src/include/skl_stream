@@ -229,9 +229,9 @@ public:
     //! Write value into the buffer
     //! \remark Asserts that the whole \p f_value bytes can be written
     template <typename _Type>
+        requires(__is_trivially_copyable(_Type))
     void write(_Type f_value) noexcept {
         constexpr u32 CValueSize = sizeof(_Type);
-        static_assert(__is_trivial(_Type));
 
         if constexpr (CValueSize <= (SKL_CACHE_LINE_SIZE / 2)) {
             SKL_ASSERT(fits(CValueSize));
@@ -248,11 +248,11 @@ public:
     //! \return true if the value was successfully written
     //! \return true if the value cannot fit into the buffer
     template <typename _Type>
+        requires(__is_trivially_copyable(_Type))
     [[nodiscard]] bool write_safe(_Type f_value) noexcept {
         constexpr u32 CValueSize = sizeof(_Type);
 
         if (fits(CValueSize)) [[likely]] {
-            static_assert(__is_trivial(_Type));
             if constexpr (CValueSize <= (SKL_CACHE_LINE_SIZE / 2)) {
                 *reinterpret_cast<_Type*>(front()) = f_value;
                 seek_forward(CValueSize);
