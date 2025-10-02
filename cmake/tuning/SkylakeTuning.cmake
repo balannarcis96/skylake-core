@@ -27,28 +27,26 @@ endif()
 
 function(skl_add_presets_file
     FILE_NAME)
-
     if(NOT EXISTS ${FILE_NAME})
         message(FATAL_ERROR "Preset file doesnt exists ${FILE_NAME}!")
     endif()
+
     message(STATUS "Using presets file ${FILE_NAME}")
+
     if("${SKL_TUNE_PRESETS_FILES}" STREQUAL "")
         set(SKL_TUNE_PRESETS_FILES "${FILE_NAME}" CACHE STRING "Tuning presets json file list" FORCE)
     else()
         set(SKL_TUNE_PRESETS_FILES "${SKL_TUNE_PRESETS_FILES};${FILE_NAME}" CACHE STRING "Tuning presets json file list" FORCE)
     endif()
-
 endfunction()
 
-function( skl_add_tune_header_to_target
-    TARGET_NAME        # [Required] Name of the target to add tune headers to
-    OUTPUT_FILE_NAME ) # [Required] Base of the output tune files (private and public)
-
+function(skl_add_tune_header_to_target
+    TARGET_NAME # [Required] Name of the target to add tune headers to
+    OUTPUT_FILE_NAME) # [Required] Base of the output tune files (private and public)
     # PRESET_NAME         [Optional] Name of the preset to use | if not provided SKL_TUNE_PRESET is used
     # PRESET_TARGET_NAME  [Optional] Used when multiple targets must use the same preset target name | default = TARGET_NAME
     # DEFAULT_PRESET_FILE [Optional] Default presets file name | if the default preset file for the target is not ${SKL_TUNE_DEFAULT_PRESETS_FILE}
     # DEFAULT_PRESET_NAME [Optional] Default preset name |  if the default preset name for the target is not ${SKL_TUNE_DEFAULT_PRESET}
-
     set(_ONE_VALUE_ARGS PRESET_NAME PRESET_TARGET_NAME DEFAULT_PRESET_FILE DEFAULT_PRESET_NAME)
     cmake_parse_arguments(TUNE "" "${_ONE_VALUE_ARGS}" "" ${ARGN})
 
@@ -92,6 +90,7 @@ function( skl_add_tune_header_to_target
     endif()
 
     set("VERBOSE_VALUE" "False")
+
     if(SKL_TUNE_VERBOSE)
         set("VERBOSE_VALUE" "True")
     endif()
@@ -99,15 +98,15 @@ function( skl_add_tune_header_to_target
     execute_process(
         COMMAND
         python3 "${SKL_TUNE_PRESET_PROCESS_SCRIPT}"
-        --preset_name         "${TUNE_PRESET_NAME}"
-        --input_file          "${SKL_TUNE_PRESETS_FILES}"
-        --target_name         "${TARGET_NAME}"
-        --preset_target_name  "${TUNE_PRESET_TARGET_NAME}"
-        --output_public       "${TARGET_PUBLIC_TUNE_FILE}"
-        --output_private      "${TARGET_PRIVATE_TUNE_FILE}"
-        --default_file        "${TUNE_DEFAULT_PRESET_FILE}"
-        --default_preset      "${TUNE_DEFAULT_PRESET_NAME}"
-        --verbose             "${VERBOSE_VALUE}"
+        --preset_name "${TUNE_PRESET_NAME}"
+        --input_file "${SKL_TUNE_PRESETS_FILES}"
+        --target_name "${TARGET_NAME}"
+        --preset_target_name "${TUNE_PRESET_TARGET_NAME}"
+        --output_public "${TARGET_PUBLIC_TUNE_FILE}"
+        --output_private "${TARGET_PRIVATE_TUNE_FILE}"
+        --default_file "${TUNE_DEFAULT_PRESET_FILE}"
+        --default_preset "${TUNE_DEFAULT_PRESET_NAME}"
+        --verbose "${VERBOSE_VALUE}"
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
 
@@ -128,5 +127,4 @@ function( skl_add_tune_header_to_target
 
     # Add the header to the public include set of the target
     target_include_directories(${TARGET_NAME} PUBLIC "${SKL_TUNE_GENERATE_OUTPUT_PATH}/${TARGET_NAME}")
-
 endfunction()
