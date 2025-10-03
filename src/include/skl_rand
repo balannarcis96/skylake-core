@@ -58,7 +58,16 @@ public:
     //! Generate pseudo random value in interval [f_min, f_max]
     [[nodiscard]] u32 next_range(u32 f_min, u32 f_max) noexcept {
         SKL_ASSERT(f_min <= f_max);
-        return (skl_rand_internals::skl_rand(pos(), m_seed) % (f_max - f_min)) + f_min;
+
+        if (f_min == f_max) {
+            return f_min;
+        }
+
+        const u64 span        = static_cast<u64>(f_max) - static_cast<u64>(f_min);
+        const u32 raw_random  = skl_rand_internals::skl_rand(pos(), m_seed);
+        const u32 span_offset = static_cast<u32>(static_cast<u64>(raw_random) % (span + 1ULL));
+
+        return static_cast<u32>(static_cast<u64>(f_min) + span_offset);
     }
 
     //! Generate pseudo random value in interval (0.0f, 1.0f]

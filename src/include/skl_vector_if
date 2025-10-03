@@ -146,7 +146,7 @@ public:
         }
 
         //Move construct the object
-        new (self->m_finish++) _T(static_cast<_T&&>(f_args)...);
+        new (self->m_finish++) _T(skl_fwd<_Args>(f_args)...);
     }
 
     //! Remove the last object

@@ -55,7 +55,9 @@ public:
     //Copy construct
     constexpr explicit skl_result(const skl_result& f_other) noexcept
         : m_status(f_other.m_status) {
-        construct_data(f_other.value());
+        if (f_other.is_success()) {
+            construct_data(f_other.value());
+        }
     }
 
     //Move construct

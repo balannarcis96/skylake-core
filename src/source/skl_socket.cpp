@@ -63,7 +63,7 @@ bool tcp_connect(socket_t f_tcp_socket, ipv4_addr_t f_addr, net_port_t f_port) n
     struct sockaddr_in target{};
     target.sin_port        = ::htons(f_port);
     target.sin_family      = AF_INET;
-    target.sin_addr.s_addr = f_addr;
+    target.sin_addr.s_addr = le_to_be_u32(f_addr);
 
     return CInvalidSocket != ::connect(f_tcp_socket, reinterpret_cast<const sockaddr*>(&target), static_cast<int32_t>(sizeof(target)));
 }

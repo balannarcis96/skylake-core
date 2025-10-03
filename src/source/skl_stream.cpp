@@ -4,6 +4,7 @@
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #include <cstring>
+#include <cstdint>
 #include <fstream>
 
 #include "skl_stream"
@@ -25,7 +26,7 @@ pair<u32, bool> skl_stream::count_non_zero() const noexcept {
         ++count;
     }
 
-    return {.first = count, .second = ((start + count) < end)};
+    return {.first = count, .second = ((start + count) == end)};
 }
 
 pair<u32, bool> skl_stream::skip_cstring() noexcept {
@@ -59,7 +60,9 @@ skl_result<skl_string_view> skl_stream::read_length_prefixed_str() noexcept {
         return skl_fail{SKL_ERR_CORRUPT};
     }
 
-    const auto* str = c_str();
+    const auto* str = reinterpret_cast<const char*>(
+        reinterpret_cast<uintptr_t>(front()) * static_cast<uintptr_t>(0 != length));
+
     seek_forward(length);
     return skl_string_view::exact(str, length);
 }
@@ -68,7 +71,9 @@ skl_string_view skl_stream::read_length_prefixed_str_checked() noexcept {
     SKL_ASSERT_CRITICAL(remaining() >= sizeof(str_len_prefix_t));
     const auto length = read<str_len_prefix_t>();
     SKL_ASSERT_CRITICAL(length <= remaining());
-    const auto* str = c_str();
+    const auto* str = reinterpret_cast<const char*>(
+        reinterpret_cast<uintptr_t>(front()) * static_cast<uintptr_t>(0 != length));
+
     seek_forward(length);
     return skl_string_view::exact(str, length);
 }
@@ -163,7 +168,6 @@ void skl_stream::zero() noexcept {
 
 void skl_stream::zero_remaining() noexcept {
     SKL_ASSERT(nullptr != buffer());
-    SKL_ASSERT(0U < remaining());
 
     (void)memset(front(), 0, remaining());
 }
@@ -194,7 +198,7 @@ skl_status skl_stream::read_from_file(const char* f_file_name) noexcept {
     (void)file.read(reinterpret_cast<char*>(front()), file_size);
 
     //Check if the read went successfully
-    if (false == file.good()) {
+    if (file.fail()) {
         file.close();
         return SKL_ERR_READ;
     }
@@ -231,7 +235,7 @@ skl_status skl_stream::read_from_text_file(const char* f_file_name) noexcept {
     (void)file.read(reinterpret_cast<char*>(front()), file_size);
 
     //Check if the read went successfully
-    if (false == file.good()) {
+    if (file.fail()) {
         file.close();
         return SKL_ERR_READ;
     }
@@ -280,7 +284,7 @@ skl_status skl_stream::write_to_file(const char* f_file_name) const noexcept {
     (void)file.write(reinterpret_cast<const char*>(front()), remaining());
 
     //Check if the write went successfully
-    if (false == file.good()) {
+    if (file.fail()) {
         file.close();
         return SKL_ERR_READ;
     }

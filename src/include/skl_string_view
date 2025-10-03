@@ -64,7 +64,7 @@ public:
     //! Construct from a given buffer ptr \p f_str and a given length \p f_length
     //! \remark No way to check that the given buffer is of \p f_length length
     [[nodiscard]] static constexpr skl_string_view exact(const char* f_str, size_type f_length) noexcept {
-        SKL_ASSERT(nullptr != f_str);
+        SKL_ASSERT((f_length == 0U) || (nullptr != f_str));
         return skl_string_view{f_str, f_length};
     }
 

@@ -54,7 +54,7 @@ struct DeserializeResult {
     }
 
     [[nodiscard]] bool has_args() const noexcept {
-        return 0U == m_args_count;
+        return 0U < m_args_count;
     }
 };
 

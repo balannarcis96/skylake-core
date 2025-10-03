@@ -67,8 +67,7 @@ constexpr socket_t CInvalidSocket = -1;
 
 //! [Util] Is socket valid
 [[nodiscard]] constexpr bool is_socket_valid(socket_t f_socket) noexcept {
-    return (CInvalidSocket != f_socket)
-        && (0 != f_socket);
+    return CInvalidSocket != f_socket;
 }
 
 //! [Util] Convert the given little endian u16 to big endian (net format)

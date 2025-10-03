@@ -13,6 +13,6 @@ TEST(SkylakeStatus, General) {
     puts(str);
 
     str = skl_status{12512}.to_string();
-    ASSERT_EQ(0, strcmp(str, "[No enum entry for skl_status=12512]"));
+    ASSERT_EQ(0, strcmp(str, "[No enum entry for skl_status=12512] (Custom)"));
     puts(str);
 }

@@ -217,7 +217,7 @@ skl_result<u16> SKLThread::get_process_usable_cores(u16* f_core_indices_buffer, 
     for (u16 i = 0U; i < static_cast<u16>(total); ++i) {
         if (CPU_ISSET(i, &mask)) {
             if (count >= f_max_indices) {
-                return SKL_ERR_OVERFLOW;
+                return skl_fail{SKL_ERR_OVERFLOW};
             }
 
             f_core_indices_buffer[count++] = i;
