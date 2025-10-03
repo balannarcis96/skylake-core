@@ -336,7 +336,7 @@ protected:
         m_state.transition_flags.bResetTicksCount     = 1U;
         m_state.transition_flags.bResetSubState       = 0U;
         m_state.transition_flags.bConsumeFlags        = 1U;
-        m_state.sub_state = f_new_sub_state;
+        m_state.sub_state                             = f_new_sub_state;
         return f_new_state;
     }
 
@@ -438,6 +438,7 @@ protected:
     [[nodiscard]] constexpr state_t fsm_delay_goto_substate(sub_state_t f_new_substate, u32 f_milliseconds) noexcept {
         SKL_ASSERT(f_new_substate != fsm_sub_state());
         m_state.resume_timepoint = get_current_epoch_time() + f_milliseconds;
+        m_state.sub_state        = f_new_substate;
         m_state.flags.bIsWaiting = 1U;
         return fsm_state();
     }
@@ -450,6 +451,7 @@ protected:
         m_state.transition_flags.bResetStateStartTime = f_reset_state_start_time;
         m_state.transition_flags.bResetTicksCount     = f_reset_state_ticks;
         m_state.transition_flags.bConsumeFlags        = 1U;
+        m_state.sub_state                             = f_new_substate;
         m_state.flags.bIsWaiting                      = 1U;
         return fsm_state();
     }
@@ -726,6 +728,9 @@ public:
         //Update current state
         m_ops.m_state.current_state = next_state;
 
+        //Increment state tick count
+        ++m_ops.m_state.state_tick_count;
+
         return true;
     }
 
@@ -760,13 +765,13 @@ private:
             return m_ops.fsm_state();
         }
 
-        //Cache the result
-        m_ops.m_state.transient_result = result.value();
-
         //If transient state has fatal failure, exit fsm
         if (m_ops.m_state.flags.bTransientStateHasFatalFailure) {
             return m_ops.fsm_exit();
         }
+
+        //Cache the result
+        m_ops.m_state.transient_result = result.value();
 
         //Goto transient next state
         return m_ops.fsm_goto(m_ops.m_state.transient_next_state);
@@ -777,7 +782,7 @@ private:
         SKL_ASSERT(1U == m_ops.m_state.transition_flags.bConsumeFlags);
 
         if (m_ops.m_state.transition_flags.bResetStateStartTime) {
-            m_ops.m_state.start_timepoint = get_current_epoch_time();
+            m_ops.m_state.state_start_timepoint = get_current_epoch_time();
         }
 
         if (m_ops.m_state.transition_flags.bResetTicksCount) {

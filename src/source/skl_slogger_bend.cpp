@@ -314,7 +314,11 @@ skl::skl_string_view slogger_backend_process(skl::skl_stream& f_stream) noexcept
                                               fmt::string_view{fmt_str.data(), fmt_str.length()},
                                               args);
 
-    return skl::skl_string_view::exact(backend.g_bend_output_buffer, fmt_result.size);
+    // We clamp the size to the output buffer size - 1 to ensure correct null-termination
+    const auto size = std::min(fmt_result.size, skl::array_size(backend.g_bend_output_buffer) - 1U);
+
+    backend.g_bend_output_buffer[size] = '\0';
+    return skl::skl_string_view::exact(backend.g_bend_output_buffer, size);
 }
 
 } // namespace

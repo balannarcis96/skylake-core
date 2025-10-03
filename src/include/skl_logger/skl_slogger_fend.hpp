@@ -15,7 +15,7 @@
 
 namespace skl {
 constexpr u64 CMaxSerializedLoggerHeaderSize         = 256U;
-constexpr u64 CSerializedLoggerFrontEndBufferMinSize = 4096U;
+constexpr u64 CSerializedLoggerFrontEndBufferMinSize = 1u << 16u;
 
 constexpr u64 CSerializedLoggerFixedHeaderSize = 4U  //Timestamp (relative to the start of the program)
                                                + 2U  //UID (thread specific unique identifier | unique to the current program instance only)

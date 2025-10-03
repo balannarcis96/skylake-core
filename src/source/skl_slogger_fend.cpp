@@ -7,6 +7,7 @@
 //!
 #include "skl_epoch"
 #include "skl_tls"
+#include "skl_atomic"
 #include "skl_logger/skl_slogger_fend.hpp"
 #include "skl_logger/skl_slogger_sink.hpp"
 
@@ -17,8 +18,8 @@ extern int printf(const char* __restrict __format, ...);
 namespace {
 [[nodiscard]] inline u16 slogger_get_thread_uid() noexcept {
     static thread_local u16 thread_local_id = [] {
-        static u16 globalId = 0U;
-        return globalId++;
+        static std::relaxed_value<u16> global_id{0U};
+        return global_id.increment();
     }();
     return thread_local_id;
 }

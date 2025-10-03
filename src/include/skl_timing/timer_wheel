@@ -488,7 +488,7 @@ private:
 
 private:
     SKL_CACHE_ALIGNED wheel_t                   m_wheel{};                       //!< The timer wheel
-    u16                                         m_generations[CWheelSlotsCount]; //!< Generations for each slot (for handle validation)
+    u16                                         m_generations[CWheelSlotsCount]{0u}; //!< Generations for each slot (for handle validation)
     u64                                         m_last_tick_time{0ull};          //!< The last tick time in milliseconds
     u64                                         m_current_slot{0ull};            //!< The current slot index in the wheel
     u64                                         m_tick_count{0ull};              //!< The number of ticks since creation

@@ -52,8 +52,8 @@ void skl_siphash_8(const void* f_in, const void* f_key, void* f_out) noexcept {
     const byte* ni = (const byte*)f_in;
     const byte* kk = (const byte*)f_key;
 
-    u32         v0   = 0;
-    u32         v1   = 0;
+    u32         v0   = u32(0x736f6d65);
+    u32         v1   = u32(0x646f7261);
     u32         v2   = u32(0x6c796765);
     u32         v3   = u32(0x74656462);
     u32         k0   = SKL_HALF_SIPHASH_U8TO32_LE(kk);
@@ -106,8 +106,8 @@ void skl_siphash_8_to_4(const void* f_in, const void* f_key, void* f_out_4) noex
     const byte* ni = (const byte*)f_in;
     const byte* kk = (const byte*)f_key;
 
-    u32         v0   = 0;
-    u32         v1   = 0;
+    u32         v0   = u32(0x736f6d65);
+    u32         v1   = u32(0x646f7261);
     u32         v2   = u32(0x6c796765);
     u32         v3   = u32(0x74656462);
     u32         k0   = SKL_HALF_SIPHASH_U8TO32_LE(kk);
