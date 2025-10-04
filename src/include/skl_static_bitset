@@ -65,6 +65,9 @@ public:
     //! Number of left over bits in the last slice (0 if CSize is multiple of CBitSizeOfSlice)
     static constexpr slice_t CLeftOverBits = CBitSizeOfSlice - (CSize & CBitSizeOfSliceMask);
 
+    //! Number of usable bits in the last slice (CBitSizeOfSlice if CSize is multiple of CBitSizeOfSlice)
+    static constexpr slice_t CLastSliceUsableBits = CBitSizeOfSlice - CLeftOverBits;
+
     //! Mask for the left over bits in the last slice (0 if CSize is multiple of CBitSizeOfSlice)
     static constexpr slice_t CLeftOverBitsMask = (CLeftOverBits == 0u)
                                                    ? slice_t(0u)
@@ -133,7 +136,7 @@ public:
         // Validate index
         static_assert((CSliceIndex < CSliceCount)
                       && ((CSliceIndex < (CSliceCount - 1u))
-                          || (CBitIndex < CLeftOverBits)));
+                          || (CBitIndex < CLastSliceUsableBits)));
 
         auto& slice = m_slices[CSliceIndex];
 
@@ -156,7 +159,7 @@ public:
         // Validate index
         SKL_ASSERT((slice_index < CSliceCount)
                    && ((slice_index < (CSliceCount - 1u))
-                       || (bit_index < CLeftOverBits)));
+                       || (bit_index < CLastSliceUsableBits)));
 
         auto& slice = m_slices[slice_index];
 
@@ -181,7 +184,7 @@ public:
         // Validate index
         static_assert((CSliceIndex < CSliceCount)
                       && ((CSliceIndex < (CSliceCount - 1u))
-                          || (CBitIndex < CLeftOverBits)));
+                          || (CBitIndex < CLastSliceUsableBits)));
 
         auto& slice = m_slices[CSliceIndex];
 
@@ -204,7 +207,7 @@ public:
         // Validate index
         SKL_ASSERT((slice_index < CSliceCount)
                    && ((slice_index < (CSliceCount - 1u))
-                       || (bit_index < CLeftOverBits)));
+                       || (bit_index < CLastSliceUsableBits)));
 
         auto& slice = m_slices[slice_index];
 
@@ -228,7 +231,7 @@ public:
         // Validate index
         static_assert((CSliceIndex < CSliceCount)
                       && ((CSliceIndex < (CSliceCount - 1u))
-                          || (CBitIndex < CLeftOverBits)));
+                          || (CBitIndex < CLastSliceUsableBits)));
 
         auto& slice = m_slices[CSliceIndex];
         return (slice & CMask) != 0u;
@@ -243,7 +246,7 @@ public:
         // Validate index
         SKL_ASSERT((slice_index < CSliceCount)
                    && ((slice_index < (CSliceCount - 1u))
-                       || (bit_index < CLeftOverBits)));
+                       || (bit_index < CLastSliceUsableBits)));
 
         const auto& slice = m_slices[slice_index];
         const auto  mask  = slice_t(1u) << bit_index;
