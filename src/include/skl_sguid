@@ -14,48 +14,60 @@ namespace skl {
 //! \remark Default constructs to the null-guid (4 zero bytes)
 struct SGUID {
     static constexpr byte CSize = 4U;
-    static const SGUID    CNull;
 
     //! Default construct as null-guid
-    SGUID() noexcept
+    constexpr SGUID() noexcept
         : m_data{0U, 0U, 0U, 0U} {
     }
 
     //! Construct with specific bytes
-    SGUID(byte bytes[CSize]) noexcept
-        : m_data{bytes[0U], bytes[1U], bytes[2U], bytes[3U]} {
+    constexpr SGUID(byte f_bytes[CSize]) noexcept
+        : m_data{f_bytes[0U], f_bytes[1U], f_bytes[2U], f_bytes[3U]} {
     }
 
-    SGUID(const SGUID&) noexcept            = default;
-    SGUID& operator=(const SGUID&) noexcept = delete;
-    SGUID(SGUID&&) noexcept                 = delete;
-    SGUID& operator=(SGUID&&) noexcept      = delete;
-    ~SGUID() noexcept                       = default;
+    //! Construct with specific bytes
+    constexpr SGUID(byte f_byte_1, byte f_byte_2, byte f_byte_3, byte f_byte_4) noexcept
+        : m_data{f_byte_1, f_byte_2, f_byte_3, f_byte_4} {
+    }
 
-    [[nodiscard]] u32 raw() const noexcept {
+    //! Construct with specific u32 value
+    constexpr SGUID(u32 f_value) noexcept
+        : m_data{static_cast<byte>((f_value >> 24u) & 0xffu),
+                 static_cast<byte>((f_value >> 16u) & 0xffu),
+                 static_cast<byte>((f_value >> 8u) & 0xffu),
+                 static_cast<byte>(f_value & 0xffu)} {
+    }
+
+    constexpr SGUID(const SGUID&) noexcept  = default;
+    SGUID& operator=(const SGUID&) noexcept = default;
+    SGUID(SGUID&&) noexcept                 = default;
+    SGUID& operator=(SGUID&&) noexcept      = default;
+    constexpr ~SGUID() noexcept             = default;
+
+    [[nodiscard]] constexpr u32 raw() const noexcept {
         return *reinterpret_cast<const u32*>(m_data);
     }
 
-    [[nodiscard]] bool operator==(const SGUID& f_other) const noexcept {
+    [[nodiscard]] constexpr bool operator==(const SGUID& f_other) const noexcept {
         return raw() == f_other.raw();
     }
 
-    [[nodiscard]] bool operator!=(const SGUID& f_other) const noexcept {
+    [[nodiscard]] constexpr bool operator!=(const SGUID& f_other) const noexcept {
         return raw() != f_other.raw();
     }
 
-    [[nodiscard]] bool is_null() const noexcept {
+    [[nodiscard]] constexpr bool is_null() const noexcept {
         return *reinterpret_cast<const u32*>(m_data) == u32(0U);
     }
 
     void to_string(skl_buffer_view f_target_buffer) const noexcept;
 
-    [[nodiscard]] byte operator[](u64 f_index) const noexcept{
+    [[nodiscard]] constexpr byte operator[](u64 f_index) const noexcept {
         return m_data[f_index];
     }
 
 private:
-    const byte m_data[CSize];
+    byte m_data[CSize]; //!< The 4 bytes of the small-guid
 };
 
 //! [LibInit][ThreadLocal] Make new small-guid
@@ -73,4 +85,15 @@ private:
 //! \remark Creates new instance of SklRand on each call
 //! \remark Faster, less "collision-safe"
 [[nodiscard]] SGUID g_make_sguid_fast() noexcept;
+} // namespace skl
+
+namespace skl {
+constexpr SGUID SGUID_Zero{};                                          //!< Null SGUID
+constexpr SGUID SGUID_Max{u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu)}; //!< Max SGUID
+
+struct sguid_hash {
+    [[nodiscard]] static u64 operator()(const skl::SGUID& f_guid) noexcept {
+        return static_cast<u64>(f_guid.raw());
+    }
+};
 } // namespace skl

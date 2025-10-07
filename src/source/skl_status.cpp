@@ -4,6 +4,7 @@
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #include <cstring>
+#include <cstdio>
 
 #include "skl_atomic"
 #include "skl_status"

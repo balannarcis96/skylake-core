@@ -59,7 +59,7 @@ public:
     [[nodiscard]] skl_buffer_view sub_view(u32 f_length, u32 f_offset = 0U) const noexcept {
         SKL_ASSERT(is_valid());
         SKL_ASSERT(f_offset < length());
-        SKL_ASSERT(f_length < (length() - f_offset));
+        SKL_ASSERT(f_length <= (length() - f_offset));
         return {u64(f_length), buffer() + f_offset};
     }
     [[nodiscard]] skl_buffer_view remaining_view() const noexcept {

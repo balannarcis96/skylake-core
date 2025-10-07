@@ -83,55 +83,7 @@ public:
     //! Wheel storage type
     using wheel_t = wheel_slot_t[CWheelSlotsCount];
 
-    //! Result type for tick()
-    template <bool _Checked = false>
-    struct tick_result_t {
-        SKL_NO_MOVE_OR_COPY(tick_result_t);
-
-        ~tick_result_t() noexcept {
-            if (nullptr != m_slot) [[likely]] {
-                m_wheel.advance();
-                m_slot = nullptr;
-            }
-        }
-
-        [[nodiscard]] operator bool() const noexcept {
-            return (nullptr != m_slot);
-        }
-
-        [[nodiscard]] wheel_slot_t& operator*() noexcept {
-            SKL_ASSERT_CRITICAL(nullptr != m_slot);
-            return *m_slot;
-        }
-        [[nodiscard]] const wheel_slot_t& operator*() const noexcept {
-            SKL_ASSERT_CRITICAL(nullptr != m_slot);
-            return *m_slot;
-        }
-
-        [[nodiscard]] wheel_slot_t* operator->() noexcept {
-            SKL_ASSERT_CRITICAL(nullptr != m_slot);
-            return m_slot;
-        }
-        [[nodiscard]] const wheel_slot_t* operator->() const noexcept {
-            SKL_ASSERT_CRITICAL(nullptr != m_slot);
-            return m_slot;
-        }
-
-    private:
-        tick_result_t(wheel_slot_t* f_slot, TimerWheel& f_wheel) noexcept
-            : m_slot(f_slot)
-            , m_wheel(f_wheel) {
-            if constexpr (_Checked) {
-                SKL_ASSERT_CRITICAL(nullptr != m_slot);
-            }
-        }
-
-    private:
-        wheel_slot_t* m_slot = nullptr; //!< Pointer to the slot
-        TimerWheel&   m_wheel;          //!< Reference to the wheel
-
-        friend TimerWheel;
-    };
+    // (Unused) tick_result_t removed; direct tick APIs process and advance.
 
     TimerWheel() noexcept {
         advance<true>(0u);
@@ -160,16 +112,16 @@ public:
     //! Tick the wheel and process the current slot using the given functor (the caller guarantees that a tick can occur)
     //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
     //! \param f_now Current time (epoch time point)
-    //! \returns false if no tick occurred
+    //! \remark Does not return a status; caller guarantees a tick can occur
     template <typename _Functor>
     void tick_checked(epoch_time_point_t f_now) {
-        (void)tick_ex<false, _Functor>(f_now);
+        (void)tick_ex<true, _Functor>(f_now);
     }
 
     //! Tick the wheel and process the current slot using the given functor (forces a tick even if the granularity has not elapsed)
     //! \tparam _Functor Functor type to process each entry in the slot (must implement: static void operator()(wheel_entry_t&))
     //! \param f_now Current time (epoch time point)
-    //! \returns false if no tick occurred
+    //! \remark Does not return a status; always forces a tick
     template <typename _Functor>
     void tick_force(epoch_time_point_t f_now) noexcept {
         (void)tick_ex<true, _Functor>(f_now);
@@ -281,6 +233,7 @@ public:
     //! \returns true if the handle is valid (generation check only)
     //! \returns false if the handle is invalid (generation check only)
     [[nodiscard]] bool validate_handle_generation(const timer_wheel_handle_t& f_handle) const noexcept {
+        SKL_ASSERT_CRITICAL(f_handle.slot_index < CWheelSlotsCount);
         return f_handle.generation == m_generations[f_handle.slot_index];
     }
 

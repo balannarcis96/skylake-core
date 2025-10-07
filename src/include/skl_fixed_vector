@@ -229,7 +229,7 @@ struct skl_fixed_vector_impl {
     constexpr void zero_size() noexcept
         requires(__is_trivially_constructible(_T))
     {
-        skl_core_zero_memory(m_start, size());
+        skl_core_zero_memory(m_start, size() * sizeof(_T));
     }
 
 protected:

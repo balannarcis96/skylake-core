@@ -37,7 +37,7 @@ public:
     //! Simple (safer) constexpr impl of strlen
     static constexpr size_type cstrlen_s(const char* f_string, size_type f_max_length) noexcept {
 #if __has_builtin(__builtin_strnlen)
-        return __builtin_strlen(f_string, f_max_length);
+        return __builtin_strnlen(f_string, f_max_length);
 #else
         size_type length = 0U;
         while ((f_max_length-- > 0U) && (char(0) != *f_string++)) {

@@ -7,6 +7,7 @@
 
 #include <unistd.h>
 #include <pthread.h>
+#include <sched.h>
 
 #include "skl_thread"
 #include "skl_log"

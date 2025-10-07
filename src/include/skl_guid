@@ -13,7 +13,6 @@ namespace skl {
 //! \remark Default constructs to the null-guid (16 zero bytes)
 struct GUID {
     static constexpr byte CSize = 16U;
-    static const GUID     CNull;
 
     //Default construct as null-guid
     constexpr GUID() noexcept
@@ -21,14 +20,19 @@ struct GUID {
     }
 
     //! Construct with specific bytes
-    constexpr GUID(byte bytes[CSize]) noexcept
-        : m_data{bytes[0U], bytes[1U], bytes[2U], bytes[3U], bytes[4U], bytes[5U], bytes[6U], bytes[7U], bytes[8U], bytes[9U], bytes[10U], bytes[11U], bytes[12U], bytes[13U], bytes[14U], bytes[15U]} {
+    constexpr GUID(byte f_bytes[CSize]) noexcept
+        : m_data{f_bytes[0U], f_bytes[1U], f_bytes[2U], f_bytes[3U], f_bytes[4U], f_bytes[5U], f_bytes[6U], f_bytes[7U], f_bytes[8U], f_bytes[9U], f_bytes[10U], f_bytes[11U], f_bytes[12U], f_bytes[13U], f_bytes[14U], f_bytes[15U]} {
+    }
+
+    //! Construct with specific bytes
+    constexpr GUID(byte f_byte_1, byte f_byte_2, byte f_byte_3, byte f_byte_4, byte f_byte_5, byte f_byte_6, byte f_byte_7, byte f_byte_8, byte f_byte_9, byte f_byte_10, byte f_byte_11, byte f_byte_12, byte f_byte_13, byte f_byte_14, byte f_byte_15, byte f_byte_16) noexcept
+        : m_data{f_byte_1, f_byte_2, f_byte_3, f_byte_4, f_byte_5, f_byte_6, f_byte_7, f_byte_8, f_byte_9, f_byte_10, f_byte_11, f_byte_12, f_byte_13, f_byte_14, f_byte_15, f_byte_16} {
     }
 
     constexpr GUID(const GUID&) noexcept            = default;
-    constexpr GUID& operator=(const GUID&) noexcept = delete;
-    constexpr GUID(GUID&&) noexcept                 = delete;
-    constexpr GUID& operator=(GUID&&) noexcept      = delete;
+    constexpr GUID& operator=(const GUID&) noexcept = default;
+    constexpr GUID(GUID&&) noexcept                 = default;
+    constexpr GUID& operator=(GUID&&) noexcept      = default;
     constexpr ~GUID() noexcept                      = default;
 
     [[nodiscard]] constexpr pair<u64, u64> raw() const noexcept {
@@ -55,7 +59,7 @@ struct GUID {
     void to_string(skl_buffer_view f_target_buffer) const noexcept;
 
 private:
-    const byte m_data[CSize];
+    byte m_data[CSize];
 };
 
 //! [LibInit][ThreadLocal] Make new guid
@@ -73,4 +77,17 @@ private:
 //! \remark Creates new instance of SklRand on each call
 //! \remark Faster, less "collision-safe"
 [[nodiscard]] GUID g_make_guid_fast() noexcept;
+} // namespace skl
+
+namespace skl {
+constexpr GUID GUID_Zero{}; //!< Null GUID
+constexpr GUID GUID_Max{
+    u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu)}; //!< Max GUID
+
+struct guid_hash {
+    [[nodiscard]] static u64 operator()(const skl::GUID& f_guid) noexcept {
+        const auto raw = f_guid.raw();
+        return static_cast<u64>(raw.first ^ raw.second); // Simple XOR of the two u64 parts
+    }
+};
 } // namespace skl
