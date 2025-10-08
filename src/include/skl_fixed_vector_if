@@ -7,6 +7,7 @@
 
 #include "skl_status"
 #include "skl_fixed_vector"
+#include "skl_buffer_view"
 #include "skl_traits/forward"
 
 namespace skl {
@@ -43,6 +44,11 @@ public:
     //! Is this vector empty
     [[nodiscard]] constexpr bool empty() const noexcept {
         return root()->empty();
+    }
+
+    //! Is the vector full
+    [[nodiscard]] constexpr bool full() const noexcept {
+        return root()->full();
     }
 
     //! Can this vector fit \p f_objects_count
@@ -160,7 +166,7 @@ public:
 
         --self->m_finish;
 
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             self->m_finish->~_T();
         }
     }
@@ -424,6 +430,20 @@ public:
 
         //4. Pop last item
         --root()->m_finish;
+    }
+
+    //! Get a view of the used buffer in the fixed vector
+    [[nodiscard]] skl_buffer_view used_view() const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        return skl_buffer_view(sizeof(_T) * size(), reinterpret_cast<const byte*>(data()));
+    }
+
+    //! Get a view of the remaining (unused) buffer in the fixed vector
+    [[nodiscard]] skl_buffer_view remaining_view() const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        return skl_buffer_view(ByteSize - (sizeof(_T) * size()), reinterpret_cast<const byte*>(end()));
     }
 
 private:

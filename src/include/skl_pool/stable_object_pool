@@ -58,6 +58,7 @@ namespace stable_object_pool {
 
             m_block.upgrade().grow(m_block.capacity());
         }
+
         ~object_pool_t() noexcept {
             clear();
         }
@@ -120,7 +121,7 @@ namespace stable_object_pool {
 
         //! Deallocate the given object
         //! \returns false if the object is out of range
-        [[nodiscard]] bool deallocate_safe(_Object* f_object) noexcept {
+        [[nodiscard]] bool deallocate_safe(_Object* f_object) noexcept((false == _ConstructAndDestruct) || __is_nothrow_destructible(_Object)) {
             if (false == owns(f_object)) {
                 return false;
             }
@@ -148,7 +149,7 @@ namespace stable_object_pool {
 
         //! Deallocate the given object
         //! \remark Asserts the object is in range
-        void deallocate(_Object* f_object) noexcept {
+        void deallocate(_Object* f_object) noexcept((false == _ConstructAndDestruct) || __is_nothrow_destructible(_Object)) {
             SKL_ASSERT_CRITICAL(owns(f_object));
 
             if constexpr (_ConstructAndDestruct) {
@@ -196,13 +197,13 @@ namespace stable_object_pool {
         }
 
         //! Is the object from this pool
-        [[nodiscard]] bool owns(const _Object* f_object) const noexcept {
+        [[nodiscard]] constexpr bool owns(const _Object* f_object) const noexcept {
             return (f_object >= m_block_start) && (f_object < m_block_end);
         }
 
         //! Clear the pool, destroying all objects if needed
         //! \remark θ(n * m) where n is the block size and m is the number of used objects
-        constexpr void clear() noexcept {
+        constexpr void clear() noexcept((false == _ConstructAndDestruct) || __is_nothrow_destructible(_Object)) {
             if constexpr (_ConstructAndDestruct) {
                 //Destroy all used objects
                 for (u16 i = 0u; i < u16(_BlockSize); ++i) {
@@ -234,7 +235,7 @@ namespace stable_object_pool {
 
     template <typename _Block, bool _UseCoreAlloc>
     struct block_allocator_t {
-        static _Block* operator()() noexcept {
+        static _Block* operator()() noexcept(__is_nothrow_constructible(_Block)) {
             void* memory_block = nullptr;
             if constexpr (_UseCoreAlloc) {
                 memory_block = skl_core_alloc(sizeof(_Block), alignof(_Block));
@@ -261,7 +262,7 @@ public:
     //! \returns nullptr if no free object
     template <typename... _Args>
         requires(_ConstructAndDestruct)
-    [[nodiscard]] _Object* allocate(_Args... f_args) noexcept {
+    [[nodiscard]] _Object* allocate(_Args... f_args) noexcept(__is_nothrow_constructible(_Object, _Args...)) {
         auto* obj = allocate_raw();
         if (nullptr == obj) {
             return nullptr;
@@ -396,7 +397,7 @@ public:
 
 private:
     u32                                            m_current_pool_index{0u}; //!< Index of the next pool to allocate from
-    skl::skl_vector<pool_t*, 2u>                   m_pools{};             //!< Vector of pools
-    skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};       //!< Vector of pool ranges for quick lookup
+    skl::skl_vector<pool_t*, 2u>                   m_pools{};                //!< Vector of pools
+    skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};          //!< Vector of pool ranges for quick lookup
 };
 } // namespace skl

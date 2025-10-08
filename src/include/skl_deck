@@ -1,0 +1,392 @@
+//!
+//! \file skl_deck
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_utility"
+#include "skl_assert"
+#include "skl_pool/stable_object_pool"
+#include "skl_fixed_vector_if"
+
+//!
+//! Skylake Deck
+//!
+//! A deck is fundamentally a singly linked list of contiguous fixed size arrays of items.
+//!
+
+namespace skl {
+template <typename _T, u64 _BlockSize = 64u, bool _DisableCompaction = false>
+class Deck {
+public:
+    struct node_t {
+        node_t*                          node_next{nullptr}; //!< Next node in the list
+        skl_fixed_vector<_T, _BlockSize> node_data;          //!< Data in this node
+    };
+
+    struct insert_result_t {
+        node_t* node{nullptr}; //!< Node where the item was inserted
+        _T*     item{nullptr}; //!< Pointer to the inserted item
+
+        //! Is the result valid
+        [[nodiscard]] bool valid() const noexcept {
+            return nullptr != node;
+        }
+    };
+
+    using pool_t                                 = StableObjectPool<node_t, 64u>;
+    static constexpr bool CTriviallyCopyable     = __is_trivially_copyable(_T);
+    static constexpr bool CTriviallyDestructible = __is_trivially_destructible(_T);
+
+    Deck() noexcept = default;
+    ~Deck() noexcept {
+        clear();
+    }
+
+    //@TODO: Implement move and copy
+    SKL_NO_MOVE_OR_COPY(Deck);
+
+    //! Add a new item to the deck
+    //! \return result<node_t*, _T*> with the node and item pointer if successful, or invalid result if failed
+    //! \remark The node_t* is invalidated if the deck is compacted via compact()
+    //! \remark The _T* is invalidated on add()/remove()/compact()
+    template <typename... _Args>
+    insert_result_t add(_Args... f_args) noexcept(__is_nothrow_constructible(_T, _Args...)) {
+        if (nullptr == m_head) {
+            m_head = allocate_node_noinline();
+            SKL_ASSERT_PERMANENT(nullptr != m_head);
+            m_insert = m_head;
+        }
+
+        SKL_ASSERT_CRITICAL(nullptr != m_insert);
+        SKL_ASSERT_CRITICAL(false == m_insert->node_data.full());
+
+        m_insert->node_data.upgrade().emplace_back(skl_fwd<_Args>(f_args)...);
+
+        insert_result_t result{.node = m_insert, .item = &m_insert->node_data.upgrade().back()};
+
+        if (m_insert->node_data.full()) {
+            query_insert_node();
+        }
+
+        // Increase size
+        ++m_size;
+
+        return result;
+    }
+
+    //! Remove the first item based on the given static functor
+    //! \returns true if an item was removed, false otherwise
+    //! \remark _StaticFunctor must be a static functor of type bool(const _T&) noexcept;
+    //!        If the functor returns true, the item is removed and iteration stops
+    template <typename _StaticFunctor>
+    bool remove_first() noexcept(__is_nothrow_destructible(_T)) {
+        for (auto* current = m_head; current; current = current->node_next) {
+            for (u32 i = 0u; i < current->node_data.size(); ++i) {
+                if (_StaticFunctor::operator()(current->node_data[i])) {
+                    current->node_data.upgrade().back_swap_erase(i);
+
+                    // Decrease size
+                    --m_size;
+
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    //! Remove the first item based on the given functor
+    //! \returns true if an item was removed, false otherwise
+    //! \remark _StaticFunctor must be a functor of type bool(const _T&) noexcept;
+    //!        If the functor returns true, the item is removed and iteration stops
+    template <typename _Functor>
+    bool remove_first(const _Functor& f_func) noexcept(__is_nothrow_destructible(_T)) {
+        for (auto* current = m_head; current; current = current->node_next) {
+            for (u32 i = 0u; i < current->node_data.size(); ++i) {
+                if (f_func(current->node_data[i])) {
+                    current->node_data.upgrade().back_swap_erase(i);
+
+                    // Decrease size
+                    --m_size;
+
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    //! Remove all items based on the given static functor
+    //! \returns true if any items were removed, false otherwise
+    //! \remark _StaticFunctor must be a static functor of type bool(const _T&) noexcept;
+    //!        If the functor returns true, the item is removed and iteration continues
+    template <typename _StaticFunctor>
+    u32 remove_all() noexcept(__is_nothrow_destructible(_T)) {
+        u32 removed_count = 0;
+        for (auto* current = m_head; current; current = current->node_next) {
+            for (u32 i = 0u; i < current->node_data.size();) {
+                if (_StaticFunctor::operator()(current->node_data[i])) {
+                    current->node_data.upgrade().back_swap_erase(i);
+
+                    // Increase removed count
+                    ++removed_count;
+
+                    // Decrease size
+                    --m_size;
+                } else {
+                    ++i;
+                }
+            }
+        }
+
+        return removed_count;
+    }
+
+    //! Remove all items based on the given static functor
+    //! \returns true if any items were removed, false otherwise
+    //! \remark _StaticFunctor must be a static functor of type bool(const _T&) noexcept;
+    //!        If the functor returns true, the item is removed and iteration continues
+    template <typename _Functor>
+    u32 remove_all(_Functor f_func) noexcept(__is_nothrow_destructible(_T)) {
+        u32 removed_count = 0;
+        for (auto* current = m_head; current; current = current->node_next) {
+            for (u32 i = 0u; i < current->node_data.size();) {
+                if (f_func(current->node_data[i])) {
+                    current->node_data.upgrade().back_swap_erase(i);
+
+                    // Increase removed count
+                    ++removed_count;
+
+                    // Decrease size
+                    --m_size;
+                } else {
+                    ++i;
+                }
+            }
+        }
+
+        return removed_count;
+    }
+
+    //! Iterate over each item in the deck
+    //! \remark _StaticFunctor must be a static functor of type bool(_T&) noexcept;
+    //!        If the functor returns false, iteration stops
+    template <typename _StaticFunctor, bool _BreakOnFalse = false>
+    void for_each() noexcept {
+        auto* current = m_head;
+        while (current) {
+            for (u32 i = 0u; i < current->node_data.size(); ++i) {
+                if constexpr (_BreakOnFalse) {
+                    if (false == _StaticFunctor::operator()(current->node_data[i])) {
+                        return;
+                    }
+                } else {
+                    _StaticFunctor::operator()(current->node_data[i]);
+                }
+            }
+            current = current->node_next;
+        }
+    }
+
+    //! Iterate over each item in the deck
+    //! \remark _Functor must be a functor of type bool(_T&) noexcept;
+    //!        If the functor returns false, iteration stops
+    template <typename _Functor>
+    void for_each(const _Functor& f_func) noexcept {
+        auto* current = m_head;
+        while (current) {
+            for (u32 i = 0u; i < current->node_data.size(); ++i) {
+                if (false == f_func(current->node_data[i])) {
+                    return;
+                }
+            }
+            current = current->node_next;
+        }
+    }
+
+    //! Clear the deck, destroying all items
+    void clear() noexcept {
+        while (nullptr != m_head) {
+            auto* next = m_head->node_next;
+            m_pool.deallocate(m_head);
+            m_head = next;
+        }
+
+        m_insert = nullptr;
+        m_size   = 0;
+    }
+
+    //! Compact data into as few nodes as possible and removes empty nodes
+    //! \remark Invalidates references to items/nodes in the deck
+    void compact() noexcept
+        requires(false == _DisableCompaction)
+    {
+        if (nullptr == m_head) {
+            SKL_ASSERT_CRITICAL(0u == m_size);
+            SKL_ASSERT_CRITICAL(nullptr == m_insert);
+            return;
+        }
+
+        if (empty()) {
+            // If the deck is empty, just remove all nodes but the head
+            auto* next = m_head->node_next;
+            while (nullptr != next) {
+                auto* to_delete = next;
+                next            = next->node_next;
+
+                SKL_ASSERT_CRITICAL(to_delete->node_data.empty());
+                m_pool.deallocate(to_delete);
+            }
+
+            m_insert          = m_head;
+            m_head->node_next = nullptr;
+            SKL_ASSERT_CRITICAL(m_head->node_data.empty());
+            return;
+        }
+
+        auto* write_node = m_head;
+        while (nullptr != write_node) {
+            // If the write node is full, advance to next node
+            if (write_node->node_data.full()) {
+                write_node = write_node->node_next;
+                continue;
+            }
+
+            if (nullptr == write_node->node_next) {
+                // No more nodes to read from
+                break;
+            }
+
+            // Find the first non-empty node after the write node and delete any empty nodes on the way
+            node_t* read_node = nullptr;
+            auto*   cursor    = write_node->node_next;
+
+            while (cursor) {
+                if (cursor->node_data.empty()) {
+                    // Remove empty node
+                    write_node->node_next = cursor->node_next;
+                    m_pool.deallocate(cursor);
+                    cursor = write_node->node_next;
+                } else {
+                    // Found non-empty node
+                    read_node = cursor;
+                    break;
+                }
+            }
+
+            if (nullptr == read_node) {
+                // No more nodes to read from
+                break;
+            }
+
+            // Move items from read_node to write_node (as many as will fit)
+            if constexpr (CTriviallyCopyable && CTriviallyDestructible) {
+                auto& src_data = read_node->node_data.upgrade();
+                auto& dst_data = write_node->node_data.upgrade();
+                SKL_ASSERT_CRITICAL(!src_data.empty() && !dst_data.full());
+
+                // Calculate how many items we can move
+                const auto src_size      = src_data.size();
+                const auto dst_remaining = dst_data.capacity() - dst_data.size();
+                const auto to_copy       = skl_min<u32>(src_size, dst_remaining);
+                SKL_ASSERT_CRITICAL(0u < to_copy);
+
+                // Copy from END to match non-trivial behavior
+                const auto src_offset = src_size - to_copy;
+                __builtin_memcpy(
+                    dst_data.data() + dst_data.size(),
+                    src_data.data() + src_offset,
+                    to_copy * sizeof(_T));
+
+                dst_data.grow(to_copy);
+                src_data.shrink(to_copy);
+            } else {
+                auto& src_data = read_node->node_data.upgrade();
+                auto& dst_data = write_node->node_data.upgrade();
+                SKL_ASSERT_CRITICAL((false == src_data.empty()) && (false == dst_data.full()));
+
+                // Move items from back of source (easiest with pop_back)
+                while ((false == src_data.empty()) && (false == dst_data.full())) {
+                    dst_data.emplace_back(static_cast<_T&&>(src_data.back()));
+                    src_data.pop_back();
+                }
+            }
+
+            // If read_node is now empty, remove it
+            if (read_node->node_data.empty()) {
+                // Find the node that points to read_node
+                auto* prev = write_node;
+                while (prev->node_next != read_node) {
+                    prev = prev->node_next;
+                }
+                prev->node_next = read_node->node_next;
+                m_pool.deallocate(read_node);
+            }
+        }
+
+        // Update m_insert to point to first non-full node
+        m_insert = m_head;
+        while (m_insert->node_data.full()) {
+            if (nullptr == m_insert->node_next) {
+                // Allocate a new node if all nodes are full
+                auto* new_node = allocate_node_noinline();
+                SKL_ASSERT_PERMANENT(nullptr != new_node);
+                m_insert->node_next = new_node;
+                m_insert            = new_node;
+                return;
+            }
+
+            m_insert = m_insert->node_next;
+        }
+    }
+
+    //! Get the current size of the deck (number of items)
+    [[nodiscard]] u64 size() const noexcept { return m_size; }
+
+    //! Is the deck empty
+    [[nodiscard]] bool empty() const noexcept { return 0ull == m_size; }
+
+private:
+    //! Allocate a new node (noinline)
+    SKL_NOINLINE node_t* allocate_node_noinline() noexcept {
+        return m_pool.allocate();
+    }
+
+    //! Find the next non-full node for insertion, or allocate a new one if none exist (noinline)
+    SKL_NOINLINE void query_insert_node() noexcept {
+        SKL_ASSERT_CRITICAL(nullptr != m_insert);
+        SKL_ASSERT_CRITICAL(m_insert->node_data.full());
+
+        // Find the next non-full node
+        auto* tail = m_insert;
+        m_insert   = m_insert->node_next;
+        while (nullptr != m_insert) {
+            if (false == m_insert->node_data.full()) {
+                return;
+            }
+
+            tail     = m_insert;
+            m_insert = m_insert->node_next;
+        }
+
+        // No non-full node found, allocate a new one
+        auto* new_node = allocate_node_noinline();
+        SKL_ASSERT_PERMANENT(nullptr != new_node);
+
+        // Append new node to the list
+        tail->node_next = new_node;
+        m_insert        = new_node;
+    }
+
+private:
+    node_t* m_head{nullptr};   //!< Head of the list
+    node_t* m_insert{nullptr}; //!< Current node for insertion
+    u64     m_size{0};         //!< Current size of the deck
+    pool_t  m_pool;            //!< Pool of nodes
+};
+} // namespace skl

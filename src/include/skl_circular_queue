@@ -145,7 +145,7 @@ public:
 
     //! Clear the queue, destroying all objects if needed
     void clear() noexcept {
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             destruct_objects();
         }
 
@@ -227,7 +227,7 @@ public:
 protected:
     template <typename = _T>
     void destruct_objects() noexcept
-        requires((false == __is_trivial(_T)) && IsTypeNoThrowDestructible)
+        requires((false == __is_trivially_destructible(_T)) && IsTypeNoThrowDestructible)
     {
         for (u64 i = 0U; i < size(); ++i) {
             (*this)[i].~_T();

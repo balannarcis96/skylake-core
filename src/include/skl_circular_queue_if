@@ -134,7 +134,7 @@ public:
         SKL_ASSERT(0U < size());
         auto* self = root();
 
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             tail().~_T();
         }
 
@@ -160,7 +160,7 @@ public:
 
         --self->m_front;
 
-        if constexpr (false == __is_trivial(_T)) {
+        if constexpr (false == __is_trivially_destructible(_T)) {
             data()[(self->m_front & Mask)].~_T();
         }
     }
