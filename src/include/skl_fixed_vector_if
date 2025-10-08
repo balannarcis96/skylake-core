@@ -6,6 +6,7 @@
 #pragma once
 
 #include "skl_status"
+#include "skl_utility"
 #include "skl_fixed_vector"
 #include "skl_buffer_view"
 #include "skl_traits/forward"
@@ -433,17 +434,97 @@ public:
     }
 
     //! Get a view of the used buffer in the fixed vector
-    [[nodiscard]] skl_buffer_view used_view() const noexcept
+    [[nodiscard]] skl_buffer_view used_view() noexcept
         requires(__is_trivially_copyable(_T))
     {
-        return skl_buffer_view(sizeof(_T) * size(), reinterpret_cast<const byte*>(data()));
+        return {u64(sizeof(_T) * size()), reinterpret_cast<byte*>(data())};
     }
 
     //! Get a view of the remaining (unused) buffer in the fixed vector
-    [[nodiscard]] skl_buffer_view remaining_view() const noexcept
+    [[nodiscard]] skl_buffer_view remaining_view() noexcept
         requires(__is_trivially_copyable(_T))
     {
-        return skl_buffer_view(ByteSize - (sizeof(_T) * size()), reinterpret_cast<const byte*>(end()));
+        return {u64(ByteSize - (sizeof(_T) * size())), reinterpret_cast<byte*>(end())};
+    }
+
+    //! Get a view of the used buffer in the fixed vector
+    [[nodiscard]] skl_buffer_const_view used_view() const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        return {u64(sizeof(_T) * size()), reinterpret_cast<const byte*>(data())};
+    }
+
+    //! Get a view of the remaining (unused) buffer in the fixed vector
+    [[nodiscard]] skl_buffer_const_view remaining_view() const noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        return {u64(ByteSize - (sizeof(_T) * size())), reinterpret_cast<const byte*>(end())};
+    }
+
+    //! Add as many objects as possible from \p f_source to this vector
+    //! \returns the number of objects added to this vector
+    template <u64  __FixedCapacity,
+              u64  __Alignment,
+              bool __UseHeepStorage,
+              bool __DeferHeepAlloc,
+              bool __UseCoreAlloc>
+    [[nodiscard]] u32 add_range_from(skl_fixed_vector_impl<_T,
+                                                           __FixedCapacity,
+                                                           __Alignment,
+                                                           __UseHeepStorage,
+                                                           __DeferHeepAlloc,
+                                                           __UseCoreAlloc>& f_source) noexcept
+        requires(__is_trivially_copyable(_T))
+    {
+        if (f_source.empty() || full()) {
+            return 0U;
+        }
+
+        auto&      src_vec_if = f_source.upgrade();
+        const auto src        = src_vec_if.used_view();
+        const auto dst        = remaining_view();
+
+        const auto to_copy   = skl_min(src.length, dst.length);
+        const auto remaining = src.length - to_copy;
+        const auto count     = to_copy / sizeof(_T);
+
+        SKL_ASSERT_CRITICAL(to_copy == (count * sizeof(_T)));
+
+        // Since objects are trivially copyable, we can just update the pointer
+        root()->m_finish += count;
+
+        // Copy the data
+        __builtin_memcpy(dst.buffer, src.buffer, to_copy);
+
+        if (remaining > 0U) {
+            // Move the remaining data to the front
+            __builtin_memmove(src.buffer, src.buffer + to_copy, remaining);
+
+            // Shrink source by the number of objects copied
+            f_source.upgrade().shrink(count);
+        } else {
+            f_source.clear();
+        }
+
+        return count;
+    }
+
+    //! Remove the element at \p f_index
+    //! \remark Asserts that \p f_index < size()
+    void remove_at_trivial(u32 f_index) noexcept
+        requires(__is_trivially_destructible(_T) && __is_trivially_copyable(_T))
+    {
+        SKL_ASSERT_CRITICAL(f_index < size());
+        auto* self = root();
+
+        const auto move_count = size() - (f_index + 1U);
+        if (0U < move_count) {
+            __builtin_memmove(data() + f_index,
+                              data() + f_index + 1U,
+                              sizeof(_T) * move_count);
+        }
+
+        --self->m_finish;
     }
 
 private:

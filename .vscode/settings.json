@@ -160,6 +160,7 @@
         "timer_wheel": "cpp",
         "skl_bitset": "cpp",
         "skl_deck": "cpp",
+        "skl_filter_deck": "cpp",
         "skl_fsm": "cpp",
         "same_as": "cpp",
         "ctor": "cpp",
