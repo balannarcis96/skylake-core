@@ -256,7 +256,11 @@ public:
     using block_allocator_t = _BlockAllocator;
 
     StableObjectPool() noexcept = default;
-    SKL_NO_MOVE_OR_COPY_DEFAULT_DTOR(StableObjectPool);
+    ~StableObjectPool() noexcept {
+        clear();
+    }
+
+    SKL_NO_MOVE_OR_COPY(StableObjectPool);
 
     //! Allocate a new object
     //! \returns nullptr if no free object
