@@ -10,19 +10,25 @@
 #include "skl_buffer_view"
 
 namespace skl {
+//! Size of a SGUID in bytes
+constexpr byte CSGUIDSize = 4u;
+
+//! Raw small guid byte array
+using SGUID_raw_t = byte[CSGUIDSize];
+
 //! Simple, 4 random bytes small-guid
 //! \remark Default constructs to the null-guid (4 zero bytes)
 struct SGUID {
-    static constexpr byte CSize = 4U;
+    static constexpr byte CSize = CSGUIDSize;
 
     //! Default construct as null-guid
     constexpr SGUID() noexcept
         : m_data{0U, 0U, 0U, 0U} {
     }
 
-    //! Construct with specific bytes
-    constexpr SGUID(byte f_bytes[CSize]) noexcept
-        : m_data{f_bytes[0U], f_bytes[1U], f_bytes[2U], f_bytes[3U]} {
+    //! Construct from raw byte array
+    constexpr SGUID(SGUID_raw_t f_raw) noexcept
+        : m_data{f_raw[0U], f_raw[1U], f_raw[2U], f_raw[3U]} {
     }
 
     //! Construct with specific bytes
@@ -67,7 +73,7 @@ struct SGUID {
     }
 
 private:
-    byte m_data[CSize]; //!< The 4 bytes of the small-guid
+    SGUID_raw_t m_data; //!< The 4 bytes of the small-guid
 };
 
 //! [LibInit][ThreadLocal] Make new small-guid
