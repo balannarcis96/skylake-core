@@ -155,6 +155,7 @@
         "placement_new": "cpp",
         "skl_resources_dir": "cpp",
         "skl_spsc_bidirectional_ring": "cpp",
+        "skl_spsc_unidirectional_ring": "cpp",
         "skl_spsc_ring": "cpp",
         "stable_object_pool": "cpp",
         "timer_wheel": "cpp",
