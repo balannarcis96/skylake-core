@@ -215,12 +215,16 @@
         SKL_ATPR_CLASS_BASE(ClassName, TargetType, private)
 #endif
 
+//! Disable heap allocations for the given class
 #ifndef SKL_DISABLE_ALLOC
-#    define SKL_DISABLE_ALLOC(ClassName)                             \
-        static void* operator new(std::size_t)             = delete; \
-        static void* operator new[](std::size_t)           = delete; \
-        static void  operator delete(void*)                = delete; \
-        static void  operator delete[](void*)              = delete; \
-        static void  operator delete(void*, std::size_t)   = delete; \
-        static void  operator delete[](void*, std::size_t) = delete;
+#    define SKL_DISABLE_ALLOC(ClassName)                     \
+        static void* operator new(u64, void* ptr) noexcept { \
+            return ptr;                                      \
+        }                                                    \
+        static void* operator new(u64)            = delete;  \
+        static void* operator new[](u64)          = delete;  \
+        static void operator delete(void*)        = delete;  \
+        static void operator delete[](void*)      = delete;  \
+        static void operator delete(void*, u64)   = delete;  \
+        static void operator delete[](void*, u64) = delete;
 #endif

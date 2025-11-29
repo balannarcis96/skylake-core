@@ -133,6 +133,25 @@ struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
     }
 
     //! [SCSP] {Consumer} Dequeue objects for processing (up to \p f_max_count)
+    [[nodiscard]] u32 dequeue_burst_by_value(_Object* f_out_objects, u32 f_max_count) noexcept {
+        const auto start = m_process_head;
+        const auto head  = m_queue_head.load_acquire();
+        const auto delta = head - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index      = (start + result) & Mask;
+                f_out_objects[result] = m_objects[index];
+            }
+
+            m_process_head += result;
+        }
+
+        return result;
+    }
+
+    //! [SCSP] {Consumer} Dequeue objects for processing (up to \p f_max_count)
     //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the consumer
     [[nodiscard]] u32 dequeue_burst_hint(_Object** f_out_objects, u32 f_max_count, u32& f_out_remaining) noexcept {
         const auto start = m_process_head;
@@ -144,6 +163,29 @@ struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
             for (; (result < delta) && (result < f_max_count); ++result) {
                 const auto index      = (start + result) & Mask;
                 f_out_objects[result] = &m_objects[index];
+            }
+
+            m_process_head += result;
+        }
+
+        //Save remaining
+        f_out_remaining = delta - result;
+
+        return result;
+    }
+
+    //! [SCSP] {Consumer} Dequeue objects for processing (up to \p f_max_count)
+    //! \remark \p f_out_remaining will contain the count of remaining pending objects to be processed by the consumer
+    [[nodiscard]] u32 dequeue_burst_hint_by_value(_Object* f_out_objects, u32 f_max_count, u32& f_out_remaining) noexcept {
+        const auto start = m_process_head;
+        const auto head  = m_queue_head.load_acquire();
+        const auto delta = head - start;
+
+        u32 result = 0U;
+        if (0U < delta) {
+            for (; (result < delta) && (result < f_max_count); ++result) {
+                const auto index      = (start + result) & Mask;
+                f_out_objects[result] = m_objects[index];
             }
 
             m_process_head += result;
