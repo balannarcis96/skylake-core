@@ -92,6 +92,12 @@ struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
         return Size - delta;
     }
 
+    //! [SCSP] {Producer} Get buffer usage count
+    [[nodiscard]] u64 usage_count() noexcept {
+        const auto free = free_count();
+        return Size - free;
+    }
+
     //! [SCSP] {Producer} Get allocated (pending submit) objects count
     [[nodiscard]] u64 allocated_count() const noexcept {
         return m_allocate_head - m_queue_head.load_relaxed();
