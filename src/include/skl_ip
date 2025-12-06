@@ -18,9 +18,12 @@ using net_port_t = u16;
 } // namespace skl
 
 namespace skl {
-//! IPv4 ANY address
+//! IPv4 ANY address (0.0.0.0)
 constexpr ipv4_addr_t CIpAny = 0U;
 
-//! IPv4 BROADCAST address
+//! IPv4 LOOPBACK address (127.0.0.1)
+constexpr ipv4_addr_t CIpLoopback = 0x7F000001U;
+
+//! IPv4 BROADCAST address (255.255.255.255)
 constexpr ipv4_addr_t CIpBroadcast = 0xFFFFFFFFU;
 } // namespace skl
