@@ -82,13 +82,9 @@ struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
 
     //! [SCSP] {Producer} Get count of free objects
     [[nodiscard]] u64 free_count() noexcept {
-        u64 delta = m_allocate_head - m_cached_tail;
-        if (delta >= Size) {
-            //Queue appears full or cache is stale, refresh from atomic
-            m_cached_tail = m_queue_tail.load_acquire();
-            delta         = m_allocate_head - m_cached_tail;
-        }
-        SKL_ASSERT_CRITICAL(delta <= Size);
+        m_cached_tail = m_queue_tail.load_acquire();
+
+        const auto delta = m_allocate_head - m_cached_tail;
         return Size - delta;
     }
 
