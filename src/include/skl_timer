@@ -7,15 +7,17 @@
 //!
 #pragma once
 
+#include <skl_int>
+
 namespace skl {
-struct Timer {
+struct frame_timer_t {
     //! Reset this timer to 0 / init the timer
     void reset() noexcept;
 
     //! Tick(update) the timer and get the total seconds elapsed since the first tick() or reset()
-    [[nodiscard]] double tick() noexcept;
+    void tick() noexcept;
 
-    //! Get total seconds elapsed since the last tick() 
+    //! Get total seconds elapsed since the last tick()
     [[nodiscard]] double elapsed() const noexcept {
         return m_elapsed;
     }
@@ -26,8 +28,77 @@ struct Timer {
     }
 
 private:
-    double m_elapsed{0.0};    //!<
-    double m_total_time{0.0}; //!<
-    double m_start{0.0};      //!<
+    double m_elapsed{0.0};    //!< Time elapsed since last tick
+    double m_total_time{0.0}; //!< Total time elapsed since start
+    double m_start{0.0};      //!< Start time
 };
+
+struct frame_timer_ex_t {
+    //! Reset this timer to 0 / init the timer
+    void reset() noexcept;
+
+    //! Tick(update) the timer and get the total seconds elapsed since the first tick() or reset()
+    void tick() noexcept;
+
+    //! Get total seconds elapsed since the last tick()
+    [[nodiscard]] double elapsed() const noexcept {
+        return m_elapsed;
+    }
+
+    //! Get total seconds elapsed since the first tick()
+    [[nodiscard]] double time() const noexcept {
+        return m_total_time;
+    }
+
+    //! Get number of ticks since reset
+    [[nodiscard]] u64 tick_count() const noexcept {
+        return m_tick_count;
+    }
+
+private:
+    double m_elapsed{0.0};    //!< Time elapsed since last tick
+    double m_total_time{0.0}; //!< Total time elapsed since start
+    double m_start{0.0};      //!< Start time
+    u64    m_tick_count{0};   //!< Number of ticks
+};
+
+//! Lightweight frame timer - no syscalls, accepts pre-calculated delta time
+//! \remark Optimized for HPC: zero overhead tick() with no clock_gettime() calls
+struct lt_frame_timer_t {
+    //! Reset this timer to 0
+    void reset() noexcept {
+        m_elapsed = 0.0;
+        m_total_time = 0.0;
+        m_tick_count = 0;
+    }
+
+    //! Tick(update) the timer with pre-calculated delta time
+    //! \param f_dt Delta time since last tick in seconds
+    void tick(double f_dt) noexcept {
+        m_elapsed = f_dt;
+        m_total_time += f_dt;
+        ++m_tick_count;
+    }
+
+    //! Get total seconds elapsed since the last tick()
+    [[nodiscard]] double elapsed() const noexcept {
+        return m_elapsed;
+    }
+
+    //! Get total seconds elapsed since the first tick()
+    [[nodiscard]] double time() const noexcept {
+        return m_total_time;
+    }
+
+    //! Get number of ticks since reset
+    [[nodiscard]] u64 tick_count() const noexcept {
+        return m_tick_count;
+    }
+
+private:
+    double m_elapsed{0.0};    //!< Time elapsed since last tick
+    double m_total_time{0.0}; //!< Total time elapsed since start
+    u64    m_tick_count{0};   //!< Number of ticks
+};
+
 } // namespace skl

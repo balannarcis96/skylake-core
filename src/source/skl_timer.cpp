@@ -21,18 +21,33 @@ double current_monotonic_timestamp_seconds() noexcept {
 } // namespace
 
 namespace skl {
-void Timer::reset() noexcept {
+void frame_timer_t::reset() noexcept {
     m_start      = current_monotonic_timestamp_seconds();
     m_total_time = 0.0;
     m_elapsed    = 0.0;
 }
-double Timer::tick() noexcept {
+ void frame_timer_t::tick() noexcept {
+    const auto now = current_monotonic_timestamp_seconds();
+
+    m_elapsed     = now - m_start;
+    m_start       = now;
+    m_total_time += m_elapsed;
+}
+} // namespace skl
+
+namespace skl {
+void frame_timer_ex_t::reset() noexcept {
+    m_start      = current_monotonic_timestamp_seconds();
+    m_total_time = 0.0;
+    m_elapsed    = 0.0;
+}
+void frame_timer_ex_t::tick() noexcept {
     const auto now = current_monotonic_timestamp_seconds();
 
     m_elapsed     = now - m_start;
     m_start       = now;
     m_total_time += m_elapsed;
 
-    return m_total_time;
+    ++m_tick_count;
 }
 } // namespace skl

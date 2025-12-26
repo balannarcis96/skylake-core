@@ -40,8 +40,72 @@
     struct my_struct_t {};
     ```
     - the goal is to use `_t` to disambiguate between type names and other snake_case names eg, value names
-    - keep in minde that `_t` adds overhead to writing a type name so where the name is obviously a type name, `_t` can be omitted 
+    - keep in minde that `_t` adds overhead to writing a type name so where the name is obviously a type name, `_t` can be omitted
         - eg `u32` `u16` lack `_t` for efficiency of writing
+
+## Expression Parenthesization (AUTOSAR Style)
+Expressions with multiple operators must be parenthesized to eliminate ambiguity and make operator precedence explicit. This follows AUTOSAR C++ guidelines.
+
+**Rules:**
+- Parenthesize sub-expressions when multiple operators are present at different precedence levels
+- NOT needed for: single operator expressions, standalone values, function calls, array subscripts
+- This applies to arithmetic, logical, bitwise, and comparison operators
+
+**Examples:**
+
+✅ **Correct:**
+```cpp
+// Single operator - NO parentheses needed
+const u32 simple = a + b;
+const u32 divide = count / 8u;
+if (flag) { }
+if (value != 0u) { }
+
+// Multiple operators - parentheses required
+const u32 result = (a + b) * (c - d);        // Multiplication and addition
+const u32 value  = (x * y) + (z / w);        // Different operators, same precedence
+const u32 index  = (i * CSize) + offset;     // Multiplication then addition
+
+// Logical - parenthesize when mixing operators
+if (flag1 && flag2) { }                      // OK: same operator
+if ((a > b) && (c < d)) { }                  // Required: comparison AND logical
+if (flag1 || (flag2 && flag3)) { }           // Required: mixing || and &&
+if ((a == b) && ((c != d) || (e > f))) { }   // Required: nested mixed operators
+
+// Bitwise
+const u32 single = bits & mask;              // OK: single operator
+const u32 multi  = (bits & mask1) | (bits2 & mask2);  // Required: mixing & and |
+const u32 val    = (value << 8u) | lower;    // Required: shift and OR
+
+// Mixed operators (critical)
+if (((a + b) > c) && (d < e)) { }            // Required: arithmetic, comparison, logical
+const u32 v = ((x & mask) == 0u) ? a : b;    // Required: bitwise, comparison, ternary
+```
+
+❌ **Incorrect:**
+```cpp
+// Missing parentheses with multiple operators
+const u32 result = a + b * c;           // Should be: a + (b * c) or (a + b) * c
+const u32 value  = x * y + z;           // Should be: (x * y) + z
+const u32 index  = i * CSize + offset;  // Should be: (i * CSize) + offset
+
+// Missing parentheses mixing logical operators
+if (flag1 || flag2 && flag3) { }        // Should be: flag1 || (flag2 && flag3)
+if (a > b && c < d || e == f) { }       // Should be: ((a > b) && (c < d)) || (e == f)
+
+// Missing parentheses in bitwise operations
+const u32 mask = bits & 0xFF | bits2;   // Should be: (bits & 0xFFu) | bits2
+const u32 val  = value << 8 | lower;    // Should be: (value << 8u) | lower
+
+// Missing parentheses in mixed expressions
+if (a + b > c && d < e) { }             // Should be: ((a + b) > c) && (d < e)
+```
+
+**Rationale:**
+- Eliminates reliance on operator precedence knowledge
+- Prevents bugs from precedence misunderstandings
+- Makes code reviewer/maintainer intent crystal clear
+- Aligns with safety-critical coding standards (MISRA, AUTOSAR)
 
 ## Method/Function commenting
 * `[ThreadSafe]` - This method/function is thread safe with respect to the a specific scope. Usually for methods the scope is the object they are defined on.

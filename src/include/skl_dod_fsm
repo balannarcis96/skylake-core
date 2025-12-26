@@ -1,0 +1,410 @@
+//!
+//! \file SklDoDFsm
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include <tuple>
+#include <unordered_map>
+#include <vector>
+
+#if defined(__AVX512F__)
+#    include <immintrin.h>
+#endif
+
+#include "skl_magic_enum"
+#include "skl_timer"
+
+/*
+
+similar to how the skl_fsm is basically a
+  toolste for crafting tick state handlers for
+  a tick based fsm, i need here to do the
+  same. so the main loop iterates current
+  states array, the key is to compact the per
+  state data as much as possible, cram
+  information down to the bit level if needed
+  such that transitions cost minimal. next
+  challange, we need the state array to not be
+  stable, to allow for swap and pop removes
+  for transitioned states. then the tick logic
+  will be defined by the user as a
+  specialization for a template free function,
+  eg new_state handler<State_x>(...), these
+  functions are basically coroutines; next
+  challange is the "waiting" state, the user
+  is given an and yield for x ms api. here we
+  need float for  "remaining delay time", as
+  the tick happens it has the dt and
+  substracts from this value if > 0, if the
+  delay is greater than just skip to next,
+  this should be ok cache wise since its the
+  same exact code (handler) executing on
+  linearely loaded data;
+
+  */
+
+#include <skl_def>
+
+namespace skl::dod_fsm {
+//! Tick handler for state \p _State
+//! \remark Specialize this function for each state to provide the tick logic
+template <auto _State, typename _StateDataInstance>
+    requires(__is_enum(decltype(_State)))
+[[nodiscard]] decltype(_State) tick_state(_StateDataInstance&, float, float) noexcept;
+
+//! Skylake DoD FSM Toolkit
+//! \remark Provides the basic building blocks for crafting Data Oriented Design FSMs
+//! \remark Compile time configurable
+struct SklDoDFsmToolkitSettings {
+    SKL_DISABLE_ALLOC(SklDoDFsmToolkitSettings)
+
+    const bool default_accumulate_realtime_time = false; //!< Default setting for accumulate realtime time (ignore waits in accumulated time)
+    const u32  invalid_entity_id                = 0u;    //!< Invalid/tombstone entity ID value
+};
+
+template <typename _StatesEnum, auto _Settings>
+    requires(__is_enum(_StatesEnum) && __is_base_of(SklDoDFsmToolkitSettings, decltype(_Settings)))
+class SklDoDFsmToolkit {
+public:
+    SKL_TYPE_PURE_INTERFACE_CLASS_EX(SklDoDFsmToolkit);
+
+    using time_type_t = float; //!< Time type for delays and accumulated time
+    using id_type_t   = u32;   //!< Entity ID type
+
+    //! Toolkit settings
+    static constexpr auto CSettings = _Settings;
+
+    //! Header for each state in the DoD FSM
+    struct state_header_t {
+        time_type_t accumulated_time_ms; //!< Accumulated time in milliseconds
+        id_type_t   id;                  //!< Entity ID (preserved across transitions)
+    };
+
+    //! [DOD] State instance combining header and user state data
+    //! \remark Header is placed first for optimal cache locality
+    template <typename _StateDataType>
+    struct state_instance_t {
+        state_header_t header; //!< State header (timing, id)
+        _StateDataType data;   //!< User state data
+    };
+
+    //! [DOD] Transition request pairing entity ID with transition data
+    //! \remark ID is preserved across state transitions
+    template <typename _StateDataType>
+    struct transition_request_t {
+        id_type_t                                  id;   //!< Entity ID to preserve
+        typename _StateDataType::transition_data_t data; //!< Transition data
+    };
+
+    //! [DOD] Storage for state instances and transition queue
+    //! \remark Keeps instances and pending transitions together for cache locality
+    template <typename _StateDataType>
+    struct state_storage_t {
+        std::vector<float>                                delays;      //!< Delays for state instances
+        std::vector<state_instance_t<_StateDataType>>     instances;   //!< Active state instances
+        std::vector<transition_request_t<_StateDataType>> transitions; //!< Pending state transitions with preserved IDs
+        std::vector<id_type_t>                            removals;    //!< Pending entity removals (IDs to tombstone)
+    };
+
+    template <u32 _Identifier,
+              typename... _StateData>
+        requires((... && __is_trivially_copyable(_StateData))
+                 && (... && __is_trivially_destructible(_StateData))
+                 && (... && requires { typename _StateData::transition_data_t; })
+                 && (... && __is_trivially_copyable(typename _StateData::transition_data_t))
+                 && (... && __is_trivially_destructible(typename _StateData::transition_data_t)))
+    class FSM {
+    public:
+        SKL_TYPE_PURE_INTERFACE_CLASS(FSM);
+
+        static constexpr u32 CIdentifier = _Identifier;                           //!< FSM Identifier
+        using states_enum_t              = _StatesEnum;                           //!< States enumeration type
+        using state_id_t                 = std::underlying_type_t<states_enum_t>; //!< State ID type
+
+        //! Get state instances vector for state type \p _StateDataType
+        template <typename _StateDataType>
+        [[nodiscard]] static std::vector<state_instance_t<_StateDataType>>& get_state_instances_vector() noexcept {
+            return std::get<state_storage_t<_StateDataType>>(g_state_data).instances;
+        }
+
+        //! Get state transitions queue for state type \p _StateDataType
+        template <typename _StateDataType>
+        [[nodiscard]] static std::vector<transition_request_t<_StateDataType>>& get_state_transitions_vector() noexcept {
+            return std::get<state_storage_t<_StateDataType>>(g_state_data).transitions;
+        }
+
+        //! [DOD] Enqueue a state transition to target state type \p _TargetStateData
+        //! \remark Called by tick_state handlers to request state transitions
+        //! \param f_entity_id Entity ID to preserve across transition
+        //! \param f_transition_data Transition data for target state
+        template <typename _TargetStateData>
+        static void enqueue_transition(id_type_t f_entity_id, typename _TargetStateData::transition_data_t&& f_transition_data) noexcept {
+            get_state_transitions_vector<_TargetStateData>().push_back({f_entity_id, std::move(f_transition_data)});
+        }
+
+        //! [DOD] Request entity removal by ID
+        //! \remark Uses hashmap to route removal to correct state's removal queue
+        //! \remark Removal is O(1) via index lookup and will be processed in next tick
+        static void remove_entity(id_type_t f_entity_id) noexcept {
+            auto it = g_entity_state_map.find(f_entity_id);
+            if (it == g_entity_state_map.end()) {
+                return; // Entity not found
+            }
+
+            // Route removal to the appropriate state's removal queue
+            const states_enum_t entity_state = it->second.first;
+            route_removal_to_state(f_entity_id, entity_state);
+        }
+
+        //! [Getter] Get current state of entity by ID
+        //! \return State enum if found, otherwise returns invalid state
+        [[nodiscard]] static states_enum_t get_entity_state(id_type_t f_entity_id) noexcept {
+            auto it = g_entity_state_map.find(f_entity_id);
+            return (it != g_entity_state_map.end()) ? it->second.first : static_cast<states_enum_t>(0);
+        }
+
+        //! [DOD] Tick all active states across all state data vectors
+        //! \param f_dt Delta time since last tick
+        //! \param f_total_time Total accumulated time
+        static void tick() noexcept {
+            // Update global timer
+            g_timer.tick();
+
+            // Iterate all state data vectors via fold expression over parameter pack
+            using tick_wrapper_t = decltype([]<typename _StateDataType>(float f_dt, float f_total_time) static noexcept {
+                auto& state_delays_vector     = std::get<state_storage_t<_StateDataType>>(g_state_data).delays;
+                auto& state_instances_vector  = get_state_instances_vector<_StateDataType>();
+                auto& state_transitions_queue = get_state_transitions_vector<_StateDataType>();
+                auto& state_removals_queue    = std::get<state_storage_t<_StateDataType>>(g_state_data).removals;
+
+                constexpr states_enum_t state_enum = _StateDataType::CState;
+
+                // Process pending state transitions
+                for (auto& transition_request : state_transitions_queue) {
+                    // Allocate new state instance and preserve entity ID
+                    auto& new_instance                      = state_instances_vector.emplace_back();
+                    new_instance.header.accumulated_time_ms = 0.0f;
+                    new_instance.header.id                  = transition_request.id;
+                    new_instance.data                       = static_cast<_StateDataType>(transition_request.data);
+
+                    // Initialize delay in parallel array
+                    state_delays_vector.push_back(0.0f);
+
+                    // Update entity state map with state and index
+                    const u32 new_index                       = static_cast<u32>(state_instances_vector.size() - 1u);
+                    g_entity_state_map[transition_request.id] = {state_enum, new_index};
+                }
+                state_transitions_queue.clear();
+
+                // Process pending removals - direct O(1) removal via index
+                for (id_type_t removal_id : state_removals_queue) {
+                    auto it = g_entity_state_map.find(removal_id);
+                    if (it == g_entity_state_map.end()) {
+                        continue; // Entity not found or already removed
+                    }
+
+                    const u32 removal_index = it->second.second;
+                    g_entity_state_map.erase(it);
+
+                    // Swap-and-pop removal (sync delays + instances)
+                    if (removal_index < state_instances_vector.size() - 1u) {
+                        // Swap with last element in both arrays
+                        state_delays_vector[removal_index]    = state_delays_vector.back();
+                        state_instances_vector[removal_index] = state_instances_vector.back();
+
+                        // Update the swapped entity's index in the map
+                        const id_type_t swapped_id            = state_instances_vector[removal_index].header.id;
+                        g_entity_state_map[swapped_id].second = removal_index;
+                    }
+                    state_delays_vector.pop_back();
+                    state_instances_vector.pop_back();
+                }
+                state_removals_queue.clear();
+
+                // Extract settings from _StateDataType or use toolkit defaults
+                constexpr bool CAccumulateRealtimeTime = []() static consteval noexcept {
+                    if constexpr (requires { _StateDataType::CAccumulateRealtimeTime; }) {
+                        return _StateDataType::CAccumulateRealtimeTime;
+                    } else {
+                        return CSettings.default_accumulate_realtime_time;
+                    }
+                }();
+
+#if defined(__AVX512F__)
+                // [AVX-512] SIMD batch delay check with reverse iteration
+                const __m512 total_time_vec = _mm512_set1_ps(f_total_time);
+                size_t       remaining      = state_instances_vector.size();
+
+                // Process batches from END to START (reverse)
+                while (remaining > 0) {
+                    const size_t batch_size  = (remaining >= 16) ? 16 : remaining;
+                    const size_t batch_start = remaining - batch_size;
+
+                    if (batch_size == 16) {
+                        // Full batch: SIMD delay check
+                        __m512    delays       = _mm512_loadu_ps(&state_delays_vector[batch_start]);
+                        __mmask16 waiting_mask = _mm512_cmp_ps_mask(delays, total_time_vec, _CMP_GT_OQ);
+
+                        // Process in reverse within batch
+                        for (size_t local_idx = 16; local_idx-- > 0;) {
+                            const size_t i          = batch_start + local_idx;
+                            const bool   is_waiting = (waiting_mask >> local_idx) & 1;
+
+                            auto& state_instance = state_instances_vector[i];
+
+                            if (is_waiting) {
+                                if constexpr (CAccumulateRealtimeTime) {
+                                    state_instance.header.accumulated_time_ms += f_dt;
+                                }
+
+                                continue;
+                            }
+
+                            state_instance.header.accumulated_time_ms += f_dt;
+
+                            const auto new_state = tick_state<state_enum>(state_instance, f_dt, f_total_time);
+                            if (new_state == state_enum) {
+                                continue;
+                            }
+
+                            // State transition - swap and pop
+                            const id_type_t transitioning_id = state_instance.header.id;
+                            g_entity_state_map.erase(transitioning_id);
+
+                            const size_t current_size = state_instances_vector.size();
+                            if (i < current_size - 1u) {
+                                state_delays_vector[i]                = state_delays_vector.back();
+                                state_instances_vector[i]             = state_instances_vector.back();
+                                const id_type_t swapped_id            = state_instances_vector[i].header.id;
+                                g_entity_state_map[swapped_id].second = static_cast<u32>(i);
+                            }
+                            state_delays_vector.pop_back();
+                            state_instances_vector.pop_back();
+                        }
+
+                        remaining = batch_start;
+                    } else {
+                        // Partial batch: scalar
+                        for (size_t i = remaining; i-- > batch_start;) {
+                            auto& state_instance = state_instances_vector[i];
+
+                            if (state_delays_vector[i] > f_total_time) {
+                                if constexpr (CAccumulateRealtimeTime) {
+                                    state_instance.header.accumulated_time_ms += f_dt;
+                                }
+                                continue;
+                            }
+
+                            state_instance.header.accumulated_time_ms += f_dt;
+                            const auto new_state                       = tick_state<state_enum>(state_instance, f_dt, f_total_time);
+                            if (new_state == state_enum)
+                                continue;
+
+                            const id_type_t transitioning_id = state_instance.header.id;
+                            g_entity_state_map.erase(transitioning_id);
+
+                            const size_t current_size = state_instances_vector.size();
+                            if (i < (current_size - 1u)) {
+                                state_delays_vector[i]                = state_delays_vector.back();
+                                state_instances_vector[i]             = state_instances_vector.back();
+                                const id_type_t swapped_id            = state_instances_vector[i].header.id;
+                                g_entity_state_map[swapped_id].second = static_cast<u32>(i);
+                            }
+                            state_delays_vector.pop_back();
+                            state_instances_vector.pop_back();
+                        }
+
+                        remaining = batch_start;
+                    }
+                }
+#else
+                // [Scalar] Simple reverse iteration
+                for (size_t i = state_instances_vector.size(); i-- > 0u;) {
+                    auto& state_instance = state_instances_vector[i];
+
+                    if (state_delays_vector[i] > f_total_time) {
+                        if constexpr (CAccumulateRealtimeTime) {
+                            state_instance.header.accumulated_time_ms += f_dt;
+                        }
+
+                        continue;
+                    }
+
+                    state_instance.header.accumulated_time_ms += f_dt;
+
+                    const auto new_state = tick_state<state_enum>(state_instance, f_dt, f_total_time);
+                    if (new_state == state_enum) {
+                        continue;
+                    }
+
+                    const id_type_t transitioning_id = state_instance.header.id;
+                    g_entity_state_map.erase(transitioning_id);
+
+                    if (i < (state_instances_vector.size() - 1u)) {
+                        state_delays_vector[i]                = state_delays_vector.back();
+                        state_instances_vector[i]             = state_instances_vector.back();
+                        const id_type_t swapped_id            = state_instances_vector[i].header.id;
+                        g_entity_state_map[swapped_id].second = static_cast<u32>(i);
+                    }
+
+                    state_delays_vector.pop_back();
+                    state_instances_vector.pop_back();
+                }
+#endif
+            });
+            (tick_wrapper_t::template operator()<_StateData>(static_cast<float>(g_timer.elapsed()), static_cast<float>(g_timer.time())), ...);
+        }
+
+        //! [Init] Reset the FSM timer (call before first use)
+        static void reset_timer() noexcept {
+            g_timer.reset();
+        }
+
+        //! [Init] Clear all FSM state (call between tests)
+        static void clear() noexcept {
+            // Clear all state storage vectors
+            (clear_state_storage<_StateData>(), ...);
+            // Clear entity state map
+            g_entity_state_map.clear();
+        }
+
+    private:
+        //! [Internal] Clear storage for specific state type
+        template <typename _StateDataType>
+        static void clear_state_storage() noexcept {
+            auto& storage = std::get<state_storage_t<_StateDataType>>(g_state_data);
+            storage.delays.clear();
+            storage.instances.clear();
+            storage.transitions.clear();
+            storage.removals.clear();
+        }
+        //! Global timer for FSM timing
+        SKL_CACHE_ALIGNED static inline frame_timer_ex_t g_timer;
+
+        //! State storage (instances + transition queue) for each state type
+        SKL_CACHE_ALIGNED static inline std::tuple<state_storage_t<_StateData>...>
+            g_state_data;
+
+        //! Entity ID to current (state, index) mapping for O(1) removal
+        //! \remark pair.first = state enum, pair.second = index in state's vector
+        static inline std::unordered_map<id_type_t, std::pair<states_enum_t, u32>> g_entity_state_map;
+
+        //! [Internal] Route removal request to appropriate state's removal queue
+        static void route_removal_to_state(id_type_t f_entity_id, states_enum_t f_state) noexcept {
+            // Use fold expression to route to the correct state type
+            ((route_removal_to_state_impl<_StateData>(f_entity_id, f_state), ...));
+        }
+
+        //! [Internal] Route removal to specific state type if it matches
+        template <typename _StateDataType>
+        static void route_removal_to_state_impl(id_type_t f_entity_id, states_enum_t f_state) noexcept {
+            constexpr states_enum_t state_enum = _StateDataType::CState;
+            if (f_state == state_enum) {
+                std::get<state_storage_t<_StateDataType>>(g_state_data).removals.push_back(f_entity_id);
+            }
+        }
+    };
+};
+} // namespace skl::dod_fsm

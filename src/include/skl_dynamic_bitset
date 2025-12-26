@@ -6,6 +6,7 @@
 #pragma once
 
 #include "skl_int"
+#include "skl_result"
 #include "skl_vector_if"
 #include "skl_utility"
 #include "skl_traits/conditional_t"
@@ -49,6 +50,8 @@ public:
     DynamicBitSet() noexcept = default;
     explicit DynamicBitSet(u32 f_bit_size) noexcept
         : m_size(f_bit_size) {
+        SKL_ASSERT_CRITICAL(0u < f_bit_size);
+
         const auto slice_count = integral_ceil<u32>(skl_max<u32>(f_bit_size, 64u), CBitSizeOfSlice);
         m_slices.upgrade().resize(slice_count);
 
@@ -95,6 +98,113 @@ public:
 
             return set_count;
         }
+    }
+
+    //! Get the index of the first bit = _Value
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_first() const noexcept {
+        if (m_slices.empty()) {
+            return skl_fail{SKL_ERR_NOT_FOUND};
+        }
+
+#if defined(__AVX512F__)
+        // AVX-512 implementation
+        const u32 slice_count = u32(m_slices.size());
+        const u32 chunks      = slice_count / 8u; // 8 x u64 = 512 bits
+
+        // Process 8 slices at a time using AVX-512
+        for (u32 chunk = 0u; chunk < chunks; ++chunk) {
+            const u32 base_idx = chunk * 8u;
+
+            // Load 8 u64 slices (512 bits)
+            __m512i data = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(&m_slices[base_idx]));
+
+            if constexpr (_Value) {
+                // Looking for first 1 bit: find first slice that is NOT all zeros
+                __mmask8 mask = _mm512_cmpneq_epu64_mask(data, _mm512_setzero_si512());
+                if (mask != 0u) {
+                    // Found a slice with at least one 1 bit
+                    const u32 slice_offset = __builtin_ctz(mask);
+                    const u32 slice_idx    = base_idx + slice_offset;
+                    const u64 slice_value  = m_slices[slice_idx];
+                    const u32 bit_in_slice = __builtin_ctzll(slice_value);
+                    const u32 bit_index    = (slice_idx * CBitSizeOfSlice) + bit_in_slice;
+
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            } else {
+                // Looking for first 0 bit: find first slice that is NOT all ones
+                __m512i  all_ones = _mm512_set1_epi64(~0ULL);
+                __mmask8 mask     = _mm512_cmpneq_epu64_mask(data, all_ones);
+                if (mask != 0u) {
+                    // Found a slice with at least one 0 bit
+                    const u32 slice_offset = __builtin_ctz(mask);
+                    const u32 slice_idx    = base_idx + slice_offset;
+                    const u64 slice_value  = m_slices[slice_idx];
+                    const u32 bit_in_slice = __builtin_ctzll(~slice_value); // Invert to find first 0
+                    const u32 bit_index    = (slice_idx * CBitSizeOfSlice) + bit_in_slice;
+
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            }
+        }
+
+        // Process remaining slices
+        for (u32 i = chunks * 8u; i < slice_count; ++i) {
+            const slice_t slice_value = m_slices[i];
+
+            if constexpr (_Value) {
+                if (slice_value != 0u) {
+                    const u32 bit_in_slice = __builtin_ctzll(slice_value);
+                    const u32 bit_index    = (i * CBitSizeOfSlice) + bit_in_slice;
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            } else {
+                if (slice_value != ~slice_t(0u)) {
+                    const u32 bit_in_slice = __builtin_ctzll(~slice_value);
+                    const u32 bit_index    = (i * CBitSizeOfSlice) + bit_in_slice;
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            }
+        }
+#else
+        // Standard fallback implementation
+        const u32 slice_count = u32(m_slices.size());
+
+        for (u32 i = 0u; i < slice_count; ++i) {
+            const slice_t slice_value = m_slices[i];
+
+            if constexpr (_Value) {
+                // Looking for first 1 bit
+                if (slice_value != 0u) {
+                    const u32 bit_in_slice = __builtin_ctzll(slice_value);
+                    const u32 bit_index    = (i * CBitSizeOfSlice) + bit_in_slice;
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            } else {
+                // Looking for first 0 bit
+                if (slice_value != ~slice_t(0u)) {
+                    const u32 bit_in_slice = __builtin_ctzll(~slice_value);
+                    const u32 bit_index    = (i * CBitSizeOfSlice) + bit_in_slice;
+                    if (bit_index < m_size) {
+                        return bit_index;
+                    }
+                }
+            }
+        }
+#endif
+
+        return skl_fail{SKL_ERR_NOT_FOUND}; // Not found
     }
 
     //! Get the number of bits in the bitset
@@ -243,23 +353,32 @@ public:
             if (new_slice_count == current_slice_count) {
                 // Same slice count, just need to set bits in the last slice
                 const auto delta = f_new_size - m_size;
-                SKL_ASSERT(delta < CBitSizeOfSlice);
-                const auto start_bit  = m_size & CBitSizeOfSliceMask;
-                const auto mask       = slice_t(slice_t((slice_t(1u) << delta) - 1u) << start_bit);
-                m_slices.back()      |= mask;
+
+                if ((delta > 0u) && (delta < CBitSizeOfSlice)) {
+                    // Partial slice - set specific bits
+                    const auto start_bit  = m_size & CBitSizeOfSliceMask;
+                    const auto mask       = slice_t(slice_t((slice_t(1u) << delta) - 1u) << start_bit);
+                    m_slices.back()      |= mask;
+                }
+                // If delta == CBitSizeOfSlice: slice already initialized to default, just update count
+                // If delta == 0: nothing to do
 
                 if constexpr (_EnableCounting) {
                     m_count += delta;
                 }
             } else {
                 if (m_size > 0u) {
-                    const auto used_bits_in_last_existing_slice = (m_size & CBitSizeOfSliceMask);
-                    if (0u < (CBitSizeOfSlice - used_bits_in_last_existing_slice)) {
+                    const auto used_bits_modulo                 = (m_size & CBitSizeOfSliceMask);
+                    // If modulo is 0, last slice is fully used (64 bits), not empty
+                    const auto used_bits_in_last_existing_slice = (used_bits_modulo == 0u) ? CBitSizeOfSlice : used_bits_modulo;
+                    const auto unused_bits_in_last_slice        = CBitSizeOfSlice - used_bits_in_last_existing_slice;
+
+                    if (unused_bits_in_last_slice > 0u) {
                         const auto last_existing_slice_mask   = ~slice_t((slice_t(1u) << used_bits_in_last_existing_slice) - 1u);
                         const auto last_existing_slice_index  = current_slice_count - 1u;
                         m_slices[last_existing_slice_index]  |= last_existing_slice_mask;
                         if constexpr (_EnableCounting) {
-                            m_count += CBitSizeOfSlice - used_bits_in_last_existing_slice;
+                            m_count += unused_bits_in_last_slice;
                         }
                     }
                 }
@@ -312,7 +431,8 @@ private:
         const u32  slice_index   = f_index / CBitSizeOfSlice;
         const u32  bit_index     = f_index & CBitSizeOfSliceMask;
         const u32  slice_count   = m_slices.size();
-        const auto CLeftOverBits = (CBitSizeOfSlice - (m_size & CBitSizeOfSliceMask));
+        // Leftover bits = total allocated bits - valid bits
+        const auto CLeftOverBits = (slice_count * CBitSizeOfSlice) - m_size;
 
         return ((slice_index < slice_count)
                 && ((slice_index < (slice_count - 1u))

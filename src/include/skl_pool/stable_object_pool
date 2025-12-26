@@ -9,6 +9,7 @@
 #include "skl_vector_if"
 #include "skl_def"
 #include "skl_pair"
+#include <skl_dynamic_bitset>
 
 namespace skl {
 namespace stable_object_pool {
@@ -254,8 +255,11 @@ class StableObjectPool {
 public:
     using pool_t            = stable_object_pool::object_pool_t<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc>;
     using block_allocator_t = _BlockAllocator;
+    using free_bitset_t     = skl::DynamicBitSet<false>; // Bit=0: has free space, Bit=1: full
 
-    StableObjectPool() noexcept = default;
+    StableObjectPool() noexcept {
+        
+    }
     ~StableObjectPool() noexcept {
         clear();
     }
@@ -286,20 +290,48 @@ public:
             goto new_pool;
         }
 
-        if (m_pools[m_current_pool_index]->full()) {
-            goto new_pool;
+        // Most likely: current pool has space
+        if (false == m_pools[m_current_pool_index]->full()) [[likely]] {
+            goto allocate;
         }
 
-    allocate:
-        SKL_ASSERT(false == m_pools[m_current_pool_index]->full());
-        return m_pools[m_current_pool_index]->allocate_raw_checked();
+        // Current pool is full, mark it and search for another
+        m_free_pools.set(m_current_pool_index);
 
+        // Search for a non-full pool using SIMD-optimized find (bit=0 means has free space)
+        {
+            auto result = m_free_pools.find_first<false>();
+            if (result.is_success()) {
+                m_current_pool_index = result.value();
+                goto allocate;
+            }
+        }
+
+        // All pools are full, create a new one
+        goto new_pool;
+
+    allocate:
+        {
+            SKL_ASSERT(false == m_pools[m_current_pool_index]->full());
+            auto* obj = m_pools[m_current_pool_index]->allocate_raw_checked();
+
+            // If pool became full after this allocation, mark it
+            if (m_pools[m_current_pool_index]->full()) {
+                m_free_pools.set(m_current_pool_index);
+            }
+
+            return obj;
+        }
     new_pool:
-        auto* new_block = block_allocator_t::operator()();
-        m_pools.upgrade().push_back(new_block);
-        m_current_pool_index = u32(m_pools.size() - 1u);
-        m_pool_ranges.upgrade().emplace_back(skl::pair<_Object*, _Object*>(new_block->m_block_start, new_block->m_block_end));
-        goto allocate;
+        {
+            auto* new_block = block_allocator_t::operator()();
+            m_pools.upgrade().push_back(new_block);
+            m_current_pool_index = u32(m_pools.size() - 1u);
+            m_pool_ranges.upgrade().emplace_back(skl::pair<_Object*, _Object*>(new_block->m_block_start, new_block->m_block_end));
+            m_free_pools.grow(u32(m_pools.size())); // Grow bitset, new bit defaults to 0 (has free space)
+            SKL_ASSERT_PERMANENT((m_pools.size() == m_pool_ranges.size()) && (m_pools.size() == m_free_pools.size()));
+            goto allocate;
+        }
     }
 
     //! Get current pool
@@ -315,11 +347,19 @@ public:
     //! \returns false if the object is out of range
     //! \remark Asserts that the object is not already deallocated
     [[nodiscard]] bool deallocate_safe(_Object* f_object) noexcept {
+        SKL_ASSERT_PERMANENT((m_pools.size() == m_pool_ranges.size()) && (m_free_pools.size() == m_pool_ranges.size()));
         //Find the pool that owns this object
         for (u64 i = 0u; i < m_pool_ranges.size(); ++i) {
             const auto& range = m_pool_ranges[i];
             if ((f_object >= range.first) && (f_object < range.second)) {
+                const bool was_full = m_pools[i]->full();
                 m_pools[i]->deallocate(f_object);
+
+                // If pool was full and now has free space, unset the bit
+                if (was_full) {
+                    m_free_pools.unset(u32(i));
+                }
+
                 m_current_pool_index = u32(i);
                 return true;
             }
@@ -336,13 +376,21 @@ public:
         for (u64 i = 0u; i < m_pool_ranges.size(); ++i) {
             const auto [range_start, range_end] = m_pool_ranges[i];
             if ((f_object >= range_start) && (f_object < range_end)) {
+                const bool was_full  = m_pools[i]->full();
                 m_current_pool_index = u32(i);
                 m_pools[i]->deallocate(f_object);
+
+                // If pool was full and now has free space, unset the bit
+                if (was_full) {
+                    m_free_pools.unset(u32(i));
+                }
+
                 f_object = nullptr;
                 break;
             }
         }
 
+        // Assert object was found (nullptr check) + avoids unused parameter warning when asserts disabled
         SKL_ASSERT_PERMANENT(nullptr == f_object);
     }
 
@@ -376,6 +424,8 @@ public:
     [[nodiscard]] u64 mem_usage() const noexcept {
         return u64(sizeof(pool_t) * m_pools.size())
              + u64(sizeof(void*) * m_pools.capacity())
+             + u64(sizeof(free_bitset_t))
+             + u64(sizeof(free_bitset_t::slice_t) * m_free_pools.slices_count())
              + u64(sizeof(skl::pair<_Object*, _Object*>) * m_pool_ranges.capacity());
     }
 
@@ -394,14 +444,22 @@ public:
         m_current_pool_index = 0u;
         for (auto* pool : m_pools) {
             pool->clear();
+            pool->~pool_t();
+            if constexpr (_UseCoreAlloc) {
+                skl_core_free(pool);
+            } else {
+                skl_vector_free(pool);
+            }
         }
         m_pools.clear();
         m_pool_ranges.clear();
+        m_free_pools.clear();
     }
 
 private:
     u32                                            m_current_pool_index{0u}; //!< Index of the next pool to allocate from
-    skl::skl_vector<pool_t*, 2u>                   m_pools{};                //!< Vector of pools
+    skl::skl_vector<pool_t*, 8u>                   m_pools{};                //!< Vector of pools
+    free_bitset_t                                  m_free_pools;             //!< Bitset of free pools
     skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};          //!< Vector of pool ranges for quick lookup
 };
 } // namespace skl

@@ -228,3 +228,10 @@
         static void operator delete(void*, u64)   = delete;  \
         static void operator delete[](void*, u64) = delete;
 #endif
+
+//! Class is a pure static interface class with disabled heap allocations
+#ifndef SKL_TYPE_PURE_INTERFACE_CLASS_EX
+#    define SKL_TYPE_PURE_INTERFACE_CLASS_EX(ClassName) \
+        SKL_TYPE_PURE_INTERFACE_CLASS(ClassName)        \
+        SKL_DISABLE_ALLOC(ClassName)
+#endif
