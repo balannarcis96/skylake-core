@@ -31,3 +31,60 @@ using i32  = int;
 using u32  = unsigned int;
 using i64  = long;
 using u64  = unsigned long;
+
+//! [Compiletime] Numeric limits for integral types (no std)
+//!
+//! \tparam _T Integral type
+//!
+//! \remark Provides compile-time min/max values for integral types
+//! \remark No std dependencies, uses compile-time bit manipulation
+template <typename _T>
+struct skl_numeric_limits;
+
+template <>
+struct skl_numeric_limits<i8> {
+    static constexpr i8 min() noexcept { return static_cast<i8>(-128); }
+    static constexpr i8 max() noexcept { return static_cast<i8>(127); }
+};
+
+template <>
+struct skl_numeric_limits<u8> {
+    static constexpr u8 min() noexcept { return 0u; }
+    static constexpr u8 max() noexcept { return static_cast<u8>(0xffu); }
+};
+
+template <>
+struct skl_numeric_limits<i16> {
+    static constexpr i16 min() noexcept { return static_cast<i16>(-32768); }
+    static constexpr i16 max() noexcept { return static_cast<i16>(32767); }
+};
+
+template <>
+struct skl_numeric_limits<u16> {
+    static constexpr u16 min() noexcept { return 0u; }
+    static constexpr u16 max() noexcept { return static_cast<u16>(0xffffu); }
+};
+
+template <>
+struct skl_numeric_limits<i32> {
+    static constexpr i32 min() noexcept { return static_cast<i32>(-2147483648); }
+    static constexpr i32 max() noexcept { return static_cast<i32>(2147483647); }
+};
+
+template <>
+struct skl_numeric_limits<u32> {
+    static constexpr u32 min() noexcept { return 0u; }
+    static constexpr u32 max() noexcept { return static_cast<u32>(0xffffffffu); }
+};
+
+template <>
+struct skl_numeric_limits<i64> {
+    static constexpr i64 min() noexcept { return static_cast<i64>(-9223372036854775807ll - 1ll); }
+    static constexpr i64 max() noexcept { return static_cast<i64>(9223372036854775807ll); }
+};
+
+template <>
+struct skl_numeric_limits<u64> {
+    static constexpr u64 min() noexcept { return 0ull; }
+    static constexpr u64 max() noexcept { return static_cast<u64>(0xffffffffffffffffull); }
+};

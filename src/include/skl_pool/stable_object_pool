@@ -5,18 +5,19 @@
 //!
 #pragma once
 
-#include "skl_fixed_vector_if"
-#include "skl_vector_if"
 #include "skl_def"
 #include "skl_pair"
-#include <skl_dynamic_bitset>
+#include "skl_fixed_vector_if"
+#include "skl_vector_if"
+#include "skl_dynamic_bitset"
+#include "skl_huge_pages"
 
 namespace skl {
 namespace stable_object_pool {
-    template <typename _Block, bool _UseCoreAlloc>
+    template <typename _Block, bool _UseCoreAlloc, bool _UseHugePages>
     struct block_allocator_t;
 
-    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct = true, bool _UseCoreAlloc = false>
+    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct = true, bool _UseCoreAlloc = false, typename _IndexType = u16>
     struct object_pool_t;
 } // namespace stable_object_pool
 
@@ -24,33 +25,27 @@ template <typename _Object,
           u64  _BlockSize,
           bool _ConstructAndDestruct = true,
           bool _UseCoreAlloc         = false,
-          typename _BlockAllocator
-          = stable_object_pool::block_allocator_t<
-              stable_object_pool::object_pool_t<
-                  _Object,
-                  _BlockSize,
-                  _ConstructAndDestruct,
-                  _UseCoreAlloc>,
-              _UseCoreAlloc>>
+          bool _UseHugePages         = false>
 class StableObjectPool;
 
 namespace stable_object_pool {
-    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc>
+    template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc, typename _IndexType>
     struct object_pool_t {
         struct alignas(alignof(_Object)) object_placeholder_t {
             byte body[sizeof(_Object)]{};
         };
 
+        using index_t      = _IndexType;
         using block_t      = skl::skl_fixed_vector_impl<object_placeholder_t, _BlockSize, SKL_CACHE_LINE_SIZE, false, _UseCoreAlloc>;
-        using free_stack_t = skl::skl_fixed_vector_impl<u16, _BlockSize, alignof(u16), false, _UseCoreAlloc>;
+        using free_stack_t = skl::skl_fixed_vector_impl<index_t, _BlockSize, alignof(index_t), false, _UseCoreAlloc>;
 
         static_assert(_BlockSize > 0U, "_BlockSize must be grater then 0");
-        static_assert(_BlockSize <= 0xffffu, "_BlockSize must be less then 65536");
+        static_assert(_BlockSize <= static_cast<u64>(skl_numeric_limits<index_t>::max()), "_BlockSize exceeds index type capacity");
 
         object_pool_t() noexcept {
             //Fill the free stack
-            u16 free_indices = 0u;
-            while (free_indices < u16(_BlockSize)) {
+            index_t free_indices = 0u;
+            while (free_indices < static_cast<index_t>(_BlockSize)) {
                 m_free.upgrade().push_back(free_indices++);
             }
 
@@ -133,7 +128,7 @@ namespace stable_object_pool {
             }
 
             //Calculate the index of the object
-            const auto index = static_cast<u16>(f_object - m_block_start);
+            const auto index = static_cast<index_t>(f_object - m_block_start);
 
 #if !SKL_BUILD_SHIPPING
             //Make sure the index is valid
@@ -159,7 +154,7 @@ namespace stable_object_pool {
             }
 
             //Calculate the index of the object
-            const auto index = static_cast<u16>(f_object - m_block_start);
+            const auto index = static_cast<index_t>(f_object - m_block_start);
 
 #if !SKL_BUILD_SHIPPING
             //Make sure the index is valid
@@ -207,7 +202,7 @@ namespace stable_object_pool {
         constexpr void clear() noexcept((false == _ConstructAndDestruct) || __is_nothrow_destructible(_Object)) {
             if constexpr (_ConstructAndDestruct) {
                 //Destroy all used objects
-                for (u16 i = 0u; i < u16(_BlockSize); ++i) {
+                for (index_t i = 0u; i < static_cast<index_t>(_BlockSize); ++i) {
                     //If the object is not in the free stack, it is used
                     if (false == m_free.upgrade().contains(i)) {
                         auto* place = reinterpret_cast<_Object*>(&m_block[i]);
@@ -219,14 +214,15 @@ namespace stable_object_pool {
             m_free.clear();
 
             //Refill the free stack
-            u16 free_indices = 0u;
-            while (free_indices < u16(_BlockSize)) {
+            index_t free_indices = 0u;
+            while (free_indices < static_cast<index_t>(_BlockSize)) {
                 m_free.upgrade().push_back(free_indices++);
             }
         }
 
     private:
-        friend StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc>;
+        friend class StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc, false>;
+        friend class StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc, true>;
 
         block_t      m_block;       //!< Storage for objects
         free_stack_t m_free;        //!< Stack of free object indices
@@ -234,32 +230,108 @@ namespace stable_object_pool {
         _Object*     m_block_end;   //!< End of the object block (last valid object in the block)
     };
 
-    template <typename _Block, bool _UseCoreAlloc>
+    template <typename _Block, bool _UseCoreAlloc, bool _UseHugePages>
     struct block_allocator_t {
-        static _Block* operator()() noexcept(__is_nothrow_constructible(_Block)) {
+        //! [Allocator] Allocate a new block
+        //!
+        //! \returns Pointer to allocated block
+        //!
+        //! \remark When _UseHugePages: allocates exactly 1 huge page (2MB)
+        //! \remark sizeof(_Block) must fit in 2MB (enforced by static_assert)
+        [[nodiscard]] static _Block* alloc() noexcept(__is_nothrow_constructible(_Block)) {
             void* memory_block = nullptr;
-            if constexpr (_UseCoreAlloc) {
+
+            if constexpr (_UseHugePages) {
+                SKL_ASSERT_PERMANENT(huge_pages::is_huge_pages_enabled());
+                static_assert(sizeof(_Block) <= huge_pages::CHugePageSize,
+                              "Block size must fit in one 2MB huge page");
+
+                // Allocate exactly 1 huge page (2MB)
+                memory_block = huge_pages::skl_huge_page_alloc(1u);
+            } else if constexpr (_UseCoreAlloc) {
                 memory_block = skl_core_alloc(sizeof(_Block), alignof(_Block));
             } else {
                 memory_block = skl_vector_alloc(sizeof(_Block), alignof(_Block));
             }
+
             SKL_ASSERT_PERMANENT(nullptr != memory_block);
             new (memory_block) _Block();
             return reinterpret_cast<_Block*>(memory_block);
         }
+
+        //! [Allocator] Free the given block
+        //!
+        //! \param f_block Block to free
+        //!
+        //! \remark When _UseHugePages: frees exactly 1 huge page (2MB)
+        static void free(_Block* f_block) noexcept {
+            if (nullptr == f_block) {
+                return;
+            }
+
+            f_block->~_Block();
+
+            if constexpr (_UseHugePages) {
+                // Free exactly 1 huge page (2MB)
+                huge_pages::skl_huge_page_free(f_block, 1u);
+            } else if constexpr (_UseCoreAlloc) {
+                skl_core_free(f_block);
+            } else {
+                skl_vector_free(f_block);
+            }
+        }
     };
 } // namespace stable_object_pool
 
-template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc, typename _BlockAllocator>
+template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc, bool _UseHugePages>
 class StableObjectPool {
 public:
-    using pool_t            = stable_object_pool::object_pool_t<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc>;
-    using block_allocator_t = _BlockAllocator;
-    using free_bitset_t     = skl::DynamicBitSet<false>; // Bit=0: has free space, Bit=1: full
+    static constexpr u64 CObjectSize = sizeof(_Object);
 
-    StableObjectPool() noexcept {
-        
+    // Use u32 indices for huge pages (allows up to 4 billion objects), u16 otherwise
+    using index_t = conditional_t<_UseHugePages, u32, u16>;
+
+    //! [Compiletime] Calculate optimal block size for huge pages
+    //!
+    //! \returns Number of objects that fit in one 2MB page with pool_t overhead
+    //!
+    //! \remark Solves: sizeof(pool_t<_Object, N, ...>) <= 2MB for maximum N
+    //! \remark pool_t overhead per object: sizeof(_Object) + sizeof(index_t)
+    //! \remark Fixed overhead: 6 pointers + alignment padding
+    [[nodiscard]] static constexpr u64 calculate_huge_page_block_size() noexcept {
+        constexpr u64 huge_page_size = huge_pages::CHugePageSize;
+        constexpr u64 pointer_overhead = (6ull * sizeof(void*)); // 6 pointers in pool_t
+        constexpr u64 per_object_cost = sizeof(_Object) + sizeof(index_t); // object + free index
+
+        // Conservative padding for alignment
+        constexpr u64 alignment_padding = 256ull;
+
+        // Solve for N: huge_page_size = pointer_overhead + (N * per_object_cost) + padding
+        constexpr u64 available_space = huge_page_size - pointer_overhead - alignment_padding;
+        constexpr u64 calculated_size = available_space / per_object_cost;
+
+        // Clamp to index_t max
+        constexpr u64 max_by_index = static_cast<u64>(skl_numeric_limits<index_t>::max());
+        constexpr u64 max_objects = (calculated_size <= max_by_index) ? calculated_size : max_by_index;
+
+        // Must have at least 1 object
+        static_assert(max_objects > 0u, "Object too large to fit in huge page with overhead");
+
+        return max_objects;
     }
+
+    static constexpr u64 CHugePagesBlockSize = _UseHugePages ? calculate_huge_page_block_size() : 0u;
+    static constexpr u64 CBlockSize          = _UseHugePages ? CHugePagesBlockSize : _BlockSize;
+
+    using pool_t            = stable_object_pool::object_pool_t<_Object, CBlockSize, _ConstructAndDestruct, _UseCoreAlloc, index_t>;
+    using free_bitset_t     = skl::DynamicBitSet<false>; // Bit=0: has free space, Bit=1: full
+    using block_allocator_t = stable_object_pool::block_allocator_t<pool_t, _UseCoreAlloc, _UseHugePages>;
+
+    // Invariant: When using huge pages, pool_t must fit in 2MB
+    static_assert(!_UseHugePages || (sizeof(pool_t) <= huge_pages::CHugePageSize),
+                  "pool_t must fit within one 2MB huge page");
+
+    StableObjectPool() noexcept = default;
     ~StableObjectPool() noexcept {
         clear();
     }
@@ -324,7 +396,7 @@ public:
         }
     new_pool:
         {
-            auto* new_block = block_allocator_t::operator()();
+            auto* new_block = block_allocator_t::alloc();
             m_pools.upgrade().push_back(new_block);
             m_current_pool_index = u32(m_pools.size() - 1u);
             m_pool_ranges.upgrade().emplace_back(skl::pair<_Object*, _Object*>(new_block->m_block_start, new_block->m_block_end));
@@ -332,15 +404,6 @@ public:
             SKL_ASSERT_PERMANENT((m_pools.size() == m_pool_ranges.size()) && (m_pools.size() == m_free_pools.size()));
             goto allocate;
         }
-    }
-
-    //! Get current pool
-    [[nodiscard]] pool_t* current_pool() noexcept {
-        if (m_pools.empty()) {
-            return nullptr;
-        }
-
-        return m_pools[m_current_pool_index];
     }
 
     //! Deallocate the given object
@@ -408,7 +471,7 @@ public:
 
     //! Get total no of objects this pool can allocate
     [[nodiscard]] u64 capacity() const noexcept {
-        return _BlockSize * m_pools.size();
+        return CBlockSize * m_pools.size();
     }
 
     //! Get total no of objects allocated
@@ -431,7 +494,7 @@ public:
 
     //! Get total no of bytes allocated from the backing storage for objects only
     [[nodiscard]] u64 mem_usage_objects() const noexcept {
-        return (sizeof(_Object) * _BlockSize) * m_pools.size();
+        return (sizeof(_Object) * CBlockSize) * m_pools.size();
     }
 
     //! Is the pool empty
@@ -443,13 +506,7 @@ public:
     void clear() noexcept {
         m_current_pool_index = 0u;
         for (auto* pool : m_pools) {
-            pool->clear();
-            pool->~pool_t();
-            if constexpr (_UseCoreAlloc) {
-                skl_core_free(pool);
-            } else {
-                skl_vector_free(pool);
-            }
+            block_allocator_t::free(pool);
         }
         m_pools.clear();
         m_pool_ranges.clear();

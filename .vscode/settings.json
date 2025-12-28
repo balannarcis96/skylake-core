@@ -164,6 +164,8 @@
         "skl_filter_deck": "cpp",
         "skl_dod_fsm": "cpp",
         "skl_fsm": "cpp",
+        "skl_huge_pages": "cpp",
+        "huge_pages_allocator": "cpp",
         "same_as": "cpp",
         "ctor": "cpp",
         "size": "cpp",

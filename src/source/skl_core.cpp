@@ -4,6 +4,7 @@
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #include <cstdio>
+#include <print>
 
 #include "skl_core"
 #include "skl_signal"
@@ -12,6 +13,7 @@
 #include "skl_fixed_vector_if"
 #include "skl_core_info"
 #include "skl_thread"
+#include "skl_huge_pages"
 
 namespace {
 //Is the skl core initialized on the current thread
@@ -36,6 +38,12 @@ namespace skl {
 skl_status skl_core_init() noexcept {
     if (g_is_skl_core_init.exchange(true)) {
         return SKL_OK_REDUNDANT;
+    }
+
+    if (skl::huge_pages::skl_huge_pages_init()) {
+        std::print("SKL_CORE: Huge pages enabled! PageSize: {} bytes \n", skl::huge_pages::CHugePageSize);
+    } else {
+        puts("SKL_CORE: Huge pages not available");
     }
 
     const auto result = SKLThread::get_process_usable_cores(g_skl_core_cpu_indices.data(), g_skl_core_cpu_indices.capacity());
