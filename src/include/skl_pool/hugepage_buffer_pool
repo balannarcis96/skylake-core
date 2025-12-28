@@ -1,0 +1,329 @@
+#pragma once
+
+#include "skl_int"
+#include "skl_def"
+#include "skl_assert"
+#include "skl_result"
+#include "skl_traits/forward"
+#include "skl_buffer_view"
+
+namespace skl {
+class HugePageBufferPool final {
+public:
+    SKL_TYPE_PURE_INTERFACE_CLASS_EX(HugePageBufferPool);
+
+    //! Buffer type allocated from the pool
+    struct buffer_t : skl_buffer_view {
+        using skl_buffer_view::skl_buffer_view;
+        using skl_buffer_view::is_valid;
+    };
+
+    //! Unique pointer type for buffers allocated from the pool
+    template <typename _Data>
+    struct ptr_t {
+        using element_type = _Data;
+        using pointer      = _Data*;
+
+        ptr_t() noexcept = default;
+        ~ptr_t() noexcept {
+            reset();
+        }
+
+        //! Construct from nullptr
+        ptr_t(decltype(nullptr)) noexcept
+            : m_data(nullptr) { }
+
+        SKL_NO_COPY(ptr_t);
+
+        //! Move constructor
+        ptr_t(ptr_t&& f_other) noexcept
+            : m_data(f_other.m_data) {
+            f_other.m_data = nullptr;
+        }
+
+        //! Move assignment operator
+        ptr_t& operator=(ptr_t&& f_other) noexcept {
+            if (this != &f_other) {
+                reset();
+                m_data         = f_other.m_data;
+                f_other.m_data = nullptr;
+            }
+            return *this;
+        }
+
+        //! Assign nullptr (releases and clears)
+        ptr_t& operator=(decltype(nullptr)) noexcept {
+            reset();
+            return *this;
+        }
+
+        //! Construct from raw pointer (takes ownership)
+        explicit ptr_t(_Data* f_data) noexcept
+            : m_data(f_data) { }
+
+        //! Get the size of the buffer
+        [[nodiscard]] static consteval u32 size() noexcept {
+            return sizeof(_Data);
+        }
+
+        //! Get the buffer pointer
+        [[nodiscard]] _Data* get() noexcept {
+            return m_data;
+        }
+
+        //! Get the buffer pointer
+        [[nodiscard]] const _Data* get() const noexcept {
+            return m_data;
+        }
+
+        //! Release ownership and return pointer (caller must free)
+        [[nodiscard]] _Data* release() noexcept {
+            _Data* tmp = m_data;
+            m_data     = nullptr;
+            return tmp;
+        }
+
+        //! Deallocate the buffer and reset pointer
+        void reset() noexcept {
+            if (nullptr != m_data) {
+                HugePageBufferPool::object_free(m_data);
+                m_data = nullptr;
+            }
+        }
+
+        //! Deallocate current buffer and take ownership of new one
+        void reset(_Data* f_data) noexcept {
+            if (m_data != f_data) {
+                reset();
+                m_data = f_data;
+            }
+        }
+
+        //! Swap with another ptr_t
+        void swap(ptr_t& f_other) noexcept {
+            _Data* tmp     = m_data;
+            m_data         = f_other.m_data;
+            f_other.m_data = tmp;
+        }
+
+        //! Access operator
+        [[nodiscard]] _Data* operator->() noexcept {
+            SKL_ASSERT(nullptr != m_data);
+            return m_data;
+        }
+
+        //! Access operator
+        [[nodiscard]] const _Data* operator->() const noexcept {
+            SKL_ASSERT(nullptr != m_data);
+            return m_data;
+        }
+
+        //! Dereference operator
+        [[nodiscard]] _Data& operator*() noexcept {
+            SKL_ASSERT(nullptr != m_data);
+            return *m_data;
+        }
+
+        //! Dereference operator
+        [[nodiscard]] const _Data& operator*() const noexcept {
+            SKL_ASSERT(nullptr != m_data);
+            return *m_data;
+        }
+
+        //! Bool conversion operator
+        [[nodiscard]] explicit operator bool() const noexcept {
+            return nullptr != m_data;
+        }
+
+        //! Equality comparison
+        [[nodiscard]] bool operator==(const ptr_t& f_other) const noexcept {
+            return m_data == f_other.m_data;
+        }
+
+        //! Inequality comparison
+        [[nodiscard]] bool operator!=(const ptr_t& f_other) const noexcept {
+            return m_data != f_other.m_data;
+        }
+
+        //! Nullptr equality
+        [[nodiscard]] bool operator==(decltype(nullptr)) const noexcept {
+            return m_data == nullptr;
+        }
+
+        //! Nullptr inequality
+        [[nodiscard]] bool operator!=(decltype(nullptr)) const noexcept {
+            return m_data != nullptr;
+        }
+
+        //! Less than (for ordered containers)
+        [[nodiscard]] bool operator<(const ptr_t& f_other) const noexcept {
+            return m_data < f_other.m_data;
+        }
+
+        //! Less than or equal
+        [[nodiscard]] bool operator<=(const ptr_t& f_other) const noexcept {
+            return m_data <= f_other.m_data;
+        }
+
+        //! Greater than
+        [[nodiscard]] bool operator>(const ptr_t& f_other) const noexcept {
+            return m_data > f_other.m_data;
+        }
+
+        //! Greater than or equal
+        [[nodiscard]] bool operator>=(const ptr_t& f_other) const noexcept {
+            return m_data >= f_other.m_data;
+        }
+
+    private:
+        _Data* m_data = nullptr; //!< Pointer to the managed buffer
+    };
+
+    //! Round size up to next power of 2 (or keep if already power of 2)
+    //! \remark Uses CLZ intrinsic for O(1) performance
+    [[nodiscard]] static constexpr u32 round_to_power_of_2(u32 size) noexcept {
+        if (size <= 1U) {
+            return 1U;
+        }
+
+        // Check if already power of 2
+        if ((size & (size - 1U)) == 0U) {
+            return size;
+        }
+
+        // Use CLZ (Count Leading Zeros) intrinsic - single CPU instruction
+        // Formula: next_pow2 = 1 << (32 - clz(size - 1))
+        return 1U << (32U - __builtin_clz(size - 1U));
+    }
+
+    //! Get the buffer size for a given bucket index
+    [[nodiscard]] static constexpr u32 buffer_get_size_for_bucket(u32 f_bucket_index) noexcept {
+        return u32(1U) << f_bucket_index;
+    }
+
+    //! Get the bucket index for a given size
+    //! \returns Bucket index, or nullopt if size exceeds buffer_max_size
+    [[nodiscard]] static skl_result<u32> buffer_get_pool_index(u32 size) noexcept;
+
+    //! Contruct the hugepage buffer pool
+    //! \param f_max_buckets Maximum number of size class buckets (default=31 for sizes up to 2GB)
+    //! \returns SKL_SUCCESS on success, error code otherwise
+    static skl_status construct_pool() noexcept;
+
+    //! Deallocate all allocated hugepages and clear the pool
+    //! After this call, the pool is not usable until re-initialized
+    static void destroy_pool() noexcept;
+
+    //! Allocate a buffer of given size from the pool
+    static buffer_t buffer_alloc(u32 f_size) noexcept;
+
+    //! Free a buffer back to the pool
+    static void buffer_free(buffer_t f_alloc) noexcept;
+
+    //! Allocate and construct an object of type _Object from the pool
+    template <typename _Object, typename... _Args>
+    [[nodiscard]] static ptr_t<_Object> object_alloc(_Args&&... f_args) noexcept {
+        const u32 size  = round_to_power_of_2(sizeof(_Object));
+        auto      alloc = buffer_alloc(size);
+
+        if constexpr (false == __is_trivially_constructible(_Object, _Args...)) {
+            if (nullptr != alloc.buffer) [[likely]] {
+                new (alloc.buffer) _Object(skl::skl_fwd<_Args>(f_args)...);
+            }
+        }
+
+        return ptr_t<_Object>(reinterpret_cast<_Object*>(alloc.buffer));
+    }
+
+    //! Destruct and free an object of type _Object back to the pool
+    template <typename _Object>
+    static void object_free(_Object* f_object) noexcept {
+        SKL_ASSERT_PERMANENT(nullptr != f_object);
+
+        // Call destructor if non-trivial
+        if constexpr (false == __is_trivially_destructible(_Object)) {
+            f_object->~_Object();
+        }
+
+        const u32 size = round_to_power_of_2(sizeof(_Object));
+        buffer_free(buffer_t{size, reinterpret_cast<byte*>(f_object)});
+    }
+};
+} // namespace skl
+
+namespace skl {
+//! STL-compatible allocator that uses HugePageBufferPool
+//! Use with std::vector, std::deque, etc. for hugepage-backed containers
+template <typename _T>
+class hugepage_allocator {
+public:
+    using value_type                             = _T;
+    using size_type                              = u64;
+    using difference_type                        = i64;
+    using pointer                                = _T*;
+    using const_pointer                          = const _T*;
+    using reference                              = _T&;
+    using const_reference                        = const _T&;
+    using propagate_on_container_move_assignment = std::true_type;
+
+    template <typename _U>
+    struct rebind {
+        using other = hugepage_allocator<_U>;
+    };
+
+    hugepage_allocator() noexcept = default;
+
+    template <typename _U>
+    hugepage_allocator(const hugepage_allocator<_U>&) noexcept { }
+
+    [[nodiscard]] static _T* allocate(size_type f_count) noexcept {
+        if (f_count == 0) {
+            return nullptr;
+        }
+
+        const u32 size  = HugePageBufferPool::round_to_power_of_2(static_cast<u32>(f_count * sizeof(_T)));
+        auto      alloc = HugePageBufferPool::buffer_alloc(size);
+
+        SKL_ASSERT_PERMANENT(alloc.buffer != nullptr);
+        return reinterpret_cast<_T*>(alloc.buffer);
+    }
+
+    static void deallocate(_T* f_ptr, size_type f_count) noexcept {
+        if (f_ptr == nullptr || f_count == 0) {
+            return;
+        }
+
+        const u32 size = HugePageBufferPool::round_to_power_of_2(static_cast<u32>(f_count * sizeof(_T)));
+        HugePageBufferPool::buffer_free(HugePageBufferPool::buffer_t{size, reinterpret_cast<byte*>(f_ptr)});
+    }
+
+    //! Reallocate for google::dense_hash_map/set compatibility
+    //! Allocates new buffer, copies old data, frees old buffer
+    [[nodiscard]] static _T* reallocate(_T* f_old_ptr, size_type f_old_count, size_type f_new_count) noexcept {
+        if (f_new_count == 0) {
+            deallocate(f_old_ptr, f_old_count);
+            return nullptr;
+        }
+
+        _T* new_ptr = allocate(f_new_count);
+
+        if (f_old_ptr != nullptr && f_old_count > 0) {
+            const size_type copy_count = (f_old_count < f_new_count) ? f_old_count : f_new_count;
+            __builtin_memcpy(new_ptr, f_old_ptr, copy_count * sizeof(_T));
+            deallocate(f_old_ptr, f_old_count);
+        }
+
+        return new_ptr;
+    }
+
+    template <typename _U>
+    [[nodiscard]] bool operator==(const hugepage_allocator<_U>&) const noexcept {
+        return true; // Stateless allocator - all instances are equal
+    }
+
+    template <typename _U>
+    [[nodiscard]] bool operator!=(const hugepage_allocator<_U>&) const noexcept {
+        return false;
+    }
+};
+} // namespace skl

@@ -5,6 +5,10 @@
 //!
 #pragma once
 
+#if defined(__AVX512F__)
+#    include <immintrin.h>
+#endif
+
 #include "skl_int"
 #include "skl_result"
 #include "skl_vector_if"

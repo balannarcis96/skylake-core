@@ -14,6 +14,7 @@
 #include "skl_core_info"
 #include "skl_thread"
 #include "skl_huge_pages"
+#include "skl_pool/hugepage_buffer_pool"
 
 namespace {
 //Is the skl core initialized on the current thread
@@ -40,16 +41,24 @@ skl_status skl_core_init() noexcept {
         return SKL_OK_REDUNDANT;
     }
 
-    if (skl::huge_pages::skl_huge_pages_init()) {
-        std::print("SKL_CORE: Huge pages enabled! PageSize: {} bytes \n", skl::huge_pages::CHugePageSize);
+    if (huge_pages::skl_huge_pages_init()) {
+        std::print("SKL_CORE: Huge pages enabled! PageSize: {} bytes \n", huge_pages::CHugePageSize);
     } else {
         puts("SKL_CORE: Huge pages not available");
     }
 
-    const auto result = SKLThread::get_process_usable_cores(g_skl_core_cpu_indices.data(), g_skl_core_cpu_indices.capacity());
-    SKL_ASSERT_PERMANENT(result.is_success() && (result.value() > 0U));
+    const auto result = HugePageBufferPool::construct_pool();
+    if (result.is_success()) {
+        puts("SKL_CORE: Hugepage buffer pool initialized");
+    } else {
+        std::print("SKL_CORE: Hugepage buffer failed to initialize! Error: {} | {} \n", result.raw(), result.to_string());
+        return SKL_ERR_FAIL;
+    }
+
+    const auto usable_cores_result = SKLThread::get_process_usable_cores(g_skl_core_cpu_indices.data(), g_skl_core_cpu_indices.capacity());
+    SKL_ASSERT_PERMANENT(usable_cores_result.is_success() && (usable_cores_result.value() > 0U));
     auto& tmp = g_skl_core_cpu_indices.upgrade();
-    tmp.grow(result.value());
+    tmp.grow(usable_cores_result.value());
 
     SKL_ASSERT_PERMANENT(init_program_epilog().is_success());
 
@@ -109,6 +118,8 @@ skl_status skl_core_deinit() noexcept {
     if (skl_core_deinit_thread().is_failure()) {
         return SKL_ERR_FAIL;
     }
+
+    HugePageBufferPool::destroy_pool();
 
     puts("SKL_CORE_DEINIT!");
     return SKL_SUCCESS;
