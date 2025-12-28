@@ -1,26 +1,96 @@
 //!
 //! \file skl_spsc_unidirectional_ring
 //!
+//! \brief Wait-free single producer single consumer unidirectional ring buffer
+//!
+//! \details Provides a lock-free SPSC queue where the producer enqueues objects
+//!          and the consumer processes them. Objects flow in one direction only
+//!          (producer -> consumer).
+//!
+//! \note Supports optional huge pages allocation for improved performance
+//! \note When using huge pages, call allocate_internal_storage() before use
+//!
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #pragma once
 
-#include <skl_int>
-#include <skl_def>
-#include <skl_atomic>
+#include "skl_int"
+#include "skl_def"
+#include "skl_atomic"
+#include "skl_utility"
+#include "skl_huge_pages"
+#include "skl_traits/conditional_t"
 
+namespace skl {
 //! [WaitFree] Single Consumer Single Producer, unidirectional ring buffer (queue)
-template <typename _Object, u64 _Size>
+template <typename _Object, u64 _Size, bool _UseHugePages>
     requires(__is_nothrow_constructible(_Object))
 struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
     static constexpr u64 Size = _Size;
     static constexpr u64 Mask = _Size - 1U;
     static_assert((Size > 0ULL) && (0U == (Size & Mask)), "_Size must be a power of 2!");
 
+    //! Whether to use huge pages for the internal buffer allocation
+    static constexpr bool CUseHugePages   = _UseHugePages;
+    static constexpr u64  CHugePagesCount = integral_ceil(sizeof(_Object) * Size, huge_pages::CHugePageSize);
+
+    //! Storage type for the internal buffer
+    using storage_t = conditional_t<_UseHugePages, _Object*, _Object[Size]>;
+
     SKL_NO_MOVE_OR_COPY(spsc_unidirectional_ring_t);
 
-    constexpr spsc_unidirectional_ring_t() noexcept  = default;
-    constexpr ~spsc_unidirectional_ring_t() noexcept = default;
+    spsc_unidirectional_ring_t() noexcept = default;
+    ~spsc_unidirectional_ring_t() noexcept {
+        if constexpr (_UseHugePages) {
+            if (nullptr != m_objects) {
+                free_internal_storage();
+            }
+        }
+    }
+
+    //! Allocate the internal storage
+    //! \remark Must be called before any other operation if _UseHugePages is true
+    void allocate_internal_storage() noexcept
+        requires(_UseHugePages)
+    {
+        m_objects = reinterpret_cast<_Object*>(huge_pages::skl_huge_page_alloc(CHugePagesCount));
+        SKL_ASSERT_PERMANENT(nullptr != m_objects);
+
+        // Placement new all objects
+        if constexpr (__is_trivially_constructible(_Object)) {
+            skl_core_zero_memory(m_objects, sizeof(_Object) * Size);
+        } else {
+            for (u64 i = 0U; i < Size; ++i) {
+                new (&m_objects[i]) _Object();
+            }
+        }
+    }
+
+    //! Free the internal storage
+    //! \remark Must be called to free resources if _UseHugePages is true
+    //! \remark Automatically called in the destructor
+    void free_internal_storage() noexcept
+        requires(_UseHugePages)
+    {
+        SKL_ASSERT_PERMANENT(nullptr != m_objects);
+
+        // Destruct all objects
+        if constexpr (false == __is_trivially_destructible(_Object)) {
+            for (u64 i = 0U; i < Size; ++i) {
+                m_objects[i].~_Object();
+            }
+        }
+
+        huge_pages::skl_huge_page_free(m_objects, CHugePagesCount);
+        m_objects = nullptr;
+    }
+
+    //! Does the internal storage exist
+    [[nodiscard]] bool has_internal_storage() const noexcept
+        requires(_UseHugePages)
+    {
+        return nullptr != m_objects;
+    }
 
     //! Get the internal buffer
     //! \remark only use this method when the producer and consumer are not running
@@ -282,7 +352,7 @@ struct SKL_CACHE_ALIGNED spsc_unidirectional_ring_t {
     }
 
 private:
-    SKL_CACHE_ALIGNED _Object m_objects[Size]; //!< {Producer & Consumer} All queue objects
+    SKL_CACHE_ALIGNED storage_t m_objects{}; //!< {Producer & Consumer} All queue objects
 
     SKL_CACHE_ALIGNED u64 m_allocate_head = 0ULL; //!< {Producer} Head to allocate at
     u64                   m_cached_tail   = 0ULL; //!< {Producer} Cached tail for free_count optimization
@@ -292,3 +362,4 @@ private:
 
     SKL_CACHE_ALIGNED u64 m_process_head = 0ULL; //!< {Consumer} Current process head
 };
+} // namespace skl

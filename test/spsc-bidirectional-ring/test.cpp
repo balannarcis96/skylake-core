@@ -19,7 +19,7 @@ struct my_object_t {
     }
 };
 
-spsc_bidirectional_ring_t<my_object_t, 1024U> g_queue{};
+skl::spsc_bidirectional_ring_t<my_object_t, 1024U, false> g_queue{};
 SKL_CACHE_ALIGNED std::relaxed_value<bool> g_run{true};
 u64                                        g_order = 0ULL;
 

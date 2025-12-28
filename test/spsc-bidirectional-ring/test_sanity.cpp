@@ -9,7 +9,7 @@ struct my_object_t {
 } // namespace
 
 TEST(SkylakeSPSCBidirectionalRing, Sanity) {
-    spsc_bidirectional_ring_t<my_object_t, 32U> queue{};
+    skl::spsc_bidirectional_ring_t<my_object_t, 32U, false> queue{};
 
     my_object_t* temp[queue.Size + 1U];
     ASSERT_FALSE(queue.allocate_bulk(temp, std::size(temp)));

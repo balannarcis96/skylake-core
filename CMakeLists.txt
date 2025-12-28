@@ -51,8 +51,9 @@ function(skl_CreateSkylakeCoreLibTarget
 
     # ENABLE_RTTI  [Optional] Enable RTTI (default=OFF)
     # DISABLE_LTO  [Optional] Do not not LTO (link time optimization) in shipping builds (default=OFF)
+    # FORCE_HUGEPAGE_SUPPORT [Optional] Force huge page support (default=OFF)
 
-    set(_OPTIONS ENABLE_RTTI DISABLE_LTO)
+    set(_OPTIONS ENABLE_RTTI DISABLE_LTO FORCE_HUGEPAGE_SUPPORT)
     cmake_parse_arguments(SKL "${_OPTIONS}" "" "" ${ARGN})
 
     # Add the static lib target
@@ -151,6 +152,11 @@ function(skl_CreateSkylakeCoreLibTarget
 
     if(SKL_CORE_ENABLE_TESTS)
         target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_CORE_TESTING=1")
+    endif()
+
+    # Enable huge page support if requested
+    if(SKL_CORE_FORCE_HUGEPAGE_SUPPORT)
+        target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_CORE_FORCE_HUGEPAGE_SUPPORT=1")
     endif()
 
     # Add disabled warnings

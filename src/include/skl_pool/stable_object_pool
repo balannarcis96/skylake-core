@@ -222,7 +222,7 @@ namespace stable_object_pool {
 
     private:
         friend class StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc, false>;
-        friend class StableObjectPool<_Object, _BlockSize, _ConstructAndDestruct, _UseCoreAlloc, true>;
+        friend class StableObjectPool<_Object, 0u, _ConstructAndDestruct, _UseCoreAlloc, true>;
 
         block_t      m_block;       //!< Storage for objects
         free_stack_t m_free;        //!< Stack of free object indices
@@ -242,7 +242,6 @@ namespace stable_object_pool {
             void* memory_block = nullptr;
 
             if constexpr (_UseHugePages) {
-                SKL_ASSERT_PERMANENT(huge_pages::is_huge_pages_enabled());
                 static_assert(sizeof(_Block) <= huge_pages::CHugePageSize,
                               "Block size must fit in one 2MB huge page");
 
@@ -299,9 +298,9 @@ public:
     //! \remark pool_t overhead per object: sizeof(_Object) + sizeof(index_t)
     //! \remark Fixed overhead: 6 pointers + alignment padding
     [[nodiscard]] static constexpr u64 calculate_huge_page_block_size() noexcept {
-        constexpr u64 huge_page_size = huge_pages::CHugePageSize;
-        constexpr u64 pointer_overhead = (6ull * sizeof(void*)); // 6 pointers in pool_t
-        constexpr u64 per_object_cost = sizeof(_Object) + sizeof(index_t); // object + free index
+        constexpr u64 huge_page_size   = huge_pages::CHugePageSize;
+        constexpr u64 pointer_overhead = (6ull * sizeof(void*));            // 6 pointers in pool_t
+        constexpr u64 per_object_cost  = sizeof(_Object) + sizeof(index_t); // object + free index
 
         // Conservative padding for alignment
         constexpr u64 alignment_padding = 256ull;
@@ -312,7 +311,7 @@ public:
 
         // Clamp to index_t max
         constexpr u64 max_by_index = static_cast<u64>(skl_numeric_limits<index_t>::max());
-        constexpr u64 max_objects = (calculated_size <= max_by_index) ? calculated_size : max_by_index;
+        constexpr u64 max_objects  = (calculated_size <= max_by_index) ? calculated_size : max_by_index;
 
         // Must have at least 1 object
         static_assert(max_objects > 0u, "Object too large to fit in huge page with overhead");
@@ -330,6 +329,10 @@ public:
     // Invariant: When using huge pages, pool_t must fit in 2MB
     static_assert(!_UseHugePages || (sizeof(pool_t) <= huge_pages::CHugePageSize),
                   "pool_t must fit within one 2MB huge page");
+
+    // Invariant: When using huge pages, _BlockSize must be 0 (calculated automatically)
+    static_assert(!_UseHugePages || (_BlockSize == 0u),
+                  "When using huge pages, _BlockSize must be 0 (calculated automatically)");
 
     StableObjectPool() noexcept = default;
     ~StableObjectPool() noexcept {
@@ -513,10 +516,25 @@ public:
         m_free_pools.clear();
     }
 
+#if defined(SKL_CORE_TESTING)
+    //! [Testing] Get current pool
+    [[nodiscard]] pool_t* current_pool() noexcept {
+        if (m_pools.empty()) {
+            return nullptr;
+        }
+
+        return m_pools[m_current_pool_index];
+    }
+#endif
+
 private:
     u32                                            m_current_pool_index{0u}; //!< Index of the next pool to allocate from
     skl::skl_vector<pool_t*, 8u>                   m_pools{};                //!< Vector of pools
     free_bitset_t                                  m_free_pools;             //!< Bitset of free pools
     skl::skl_vector<skl::pair<_Object*, _Object*>> m_pool_ranges{};          //!< Vector of pool ranges for quick lookup
 };
+
+//! Stable object pool using huge pages
+template <typename _Object, bool _ConstructAndDestruct = true>
+using HugePagesStableObjectPool = StableObjectPool<_Object, 0u, _ConstructAndDestruct, false, true>;
 } // namespace skl
