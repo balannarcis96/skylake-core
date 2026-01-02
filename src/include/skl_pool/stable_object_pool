@@ -32,7 +32,7 @@ namespace stable_object_pool {
     template <typename _Object, u64 _BlockSize, bool _ConstructAndDestruct, bool _UseCoreAlloc, typename _IndexType>
     struct object_pool_t {
         struct alignas(alignof(_Object)) object_placeholder_t {
-            byte body[sizeof(_Object)]{};
+            byte body[sizeof(_Object)];
         };
 
         using index_t      = _IndexType;

@@ -52,29 +52,42 @@ function(skl_CreateSkylakeCoreLibTarget
     # ENABLE_RTTI  [Optional] Enable RTTI (default=OFF)
     # DISABLE_LTO  [Optional] Do not not LTO (link time optimization) in shipping builds (default=OFF)
     # FORCE_HUGEPAGE_SUPPORT [Optional] Force huge page support (default=OFF)
+    # NO_MIMALLOC [Optional] Disable mimalloc (default=OFF)
 
-    set(_OPTIONS ENABLE_RTTI DISABLE_LTO FORCE_HUGEPAGE_SUPPORT)
+    set(_OPTIONS ENABLE_RTTI DISABLE_LTO FORCE_HUGEPAGE_SUPPORT NO_MIMALLOC)
     cmake_parse_arguments(SKL "${_OPTIONS}" "" "" ${ARGN})
 
     # Add the static lib target
     add_library(${TARGET_NAME} STATIC
         ${SKL_CORE_LIB_SOURCE_FILES}
-        ${SKL_CORE_LIB_PUBLIC_FILES}
-        "${SKL_MIMALLOC_DIR}/src/static.c")
+        ${SKL_CORE_LIB_PUBLIC_FILES})
 
-    # Compile mimalloc with the C++ compiler
-    set_source_files_properties("${SKL_MIMALLOC_DIR}/src/static.c" PROPERTIES
-        LANGUAGE CXX
-    )
+    # Add mimalloc if not disabled
+    if(NOT SKL_NO_MIMALLOC)
+        # Use mimalloc as the default allocator 
+        target_compile_definitions(${TARGET_NAME} PUBLIC SKL_CORE_USE_MIMALLOC=1)
 
-    # Mimalloc has an unused function when built in Release mode
-    set_source_files_properties("${SKL_MIMALLOC_DIR}/src/static.c" PROPERTIES
-        COMPILE_OPTIONS "-Wno-unused-function"
-    )
+        # Add mimalloc source files
+        target_sources(${TARGET_NAME} PRIVATE
+            "${SKL_MIMALLOC_DIR}/src/static.c"
+        )
+
+        # Compile mimalloc with the C++ compiler
+        set_source_files_properties("${SKL_MIMALLOC_DIR}/src/static.c" PROPERTIES
+            LANGUAGE CXX
+        )
+
+        # Mimalloc has an unused function when built in Release mode
+        set_source_files_properties("${SKL_MIMALLOC_DIR}/src/static.c" PROPERTIES
+            COMPILE_OPTIONS "-Wno-unused-function"
+        )
+
+        # Set include directories
+        target_include_directories(${TARGET_NAME} PUBLIC "${SKL_MIMALLOC_DIR}/include")
+    endif()
 
     # Set include directories
     target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "${SKL_CORE_LIB_SRC_ROOT}/include")
-    target_include_directories(${TARGET_NAME} PUBLIC "${SKL_MIMALLOC_DIR}/include")
     target_include_directories(${TARGET_NAME} PUBLIC "${SKL_MAGICENUM_DIR}/include")
     target_include_directories(${TARGET_NAME} PRIVATE "${SKL_CORE_LIB_SRC_ROOT}/source")
 
