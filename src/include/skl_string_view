@@ -8,6 +8,7 @@
 #pragma once
 
 #include "skl_assert"
+#include "skl_utility"
 
 namespace skl {
 struct skl_string_view {
@@ -154,28 +155,46 @@ public:
     }
 
     //! Copy min(_N, length()) chars into \p f_out_buffer
+    //! \returns No of characters copied
     template <typename _Char, size_type _N>
+        requires(__is_same(_Char, char) || __is_same(_Char, unsigned char))
     constexpr size_type copy(_Char (&f_out_buffer)[_N]) const noexcept {
-        static_assert(__is_same(_Char, char) || __is_same(_Char, unsigned char));
-        const auto copy_amount = _N > m_len ? m_len : _N;
-        for (size_type i = 0U; i < copy_amount; ++i) {
-            f_out_buffer[i] = _Char(m_str[i]);
+        if constexpr (_N == 0U) {
+            return 0U;
+        } else {
+            const auto copy_amount = skl_min<size_type>(_N, m_len);
+
+            if consteval {
+                for (size_type i = 0U; i < copy_amount; ++i) {
+                    f_out_buffer[i] = static_cast<_Char>(m_str[i]);
+                }
+            } else {
+                __builtin_memcpy(f_out_buffer, m_str, copy_amount);
+            }
+
+            return copy_amount;
         }
-        return copy_amount;
     }
 
     //! Copy min(_N - 1U, length()) chars into \p f_out_buffer
     //! \remark Write a 0 (null-terminator) a-> f_out_buffer[min(_N - 1U, length())] = 0;
     //! \returns No of character copied
     template <typename _Char, size_type _N>
+        requires(__is_same(_Char, char) || __is_same(_Char, unsigned char))
     constexpr size_type copy_and_terminate(_Char (&f_out_buffer)[_N]) const noexcept {
         static_assert(_N > 0U, "f_out_buffer must have at least size 1");
-        static_assert(__is_same(_Char, char) || __is_same(_Char, unsigned char));
-        const auto copy_amount = (_N - 1U) > m_len ? m_len : (_N - 1U);
-        for (size_type i = 0U; i < copy_amount; ++i) {
-            f_out_buffer[i] = _Char(m_str[i]);
+
+        const auto copy_amount = skl_min<size_type>(_N - 1U, m_len);
+
+        if consteval {
+            for (size_type i = 0U; i < copy_amount; ++i) {
+                f_out_buffer[i] = static_cast<_Char>(m_str[i]);
+            }
+        } else {
+            __builtin_memcpy(f_out_buffer, m_str, copy_amount);
         }
-        f_out_buffer[copy_amount] = _Char(0);
+
+        f_out_buffer[copy_amount] = _Char{};
         return copy_amount;
     }
 
@@ -194,6 +213,12 @@ public:
         return copy_amount;
     }
 
+    //! Get char at index \p f_index
+    [[nodiscard]] constexpr char operator[](size_type f_index) const noexcept {
+        SKL_ASSERT(f_index < m_len);
+        return m_str[f_index];
+    }
+
 private:
     explicit constexpr skl_string_view(const char* f_str, size_type f_len) noexcept
         : m_len(f_len)
@@ -204,6 +229,9 @@ private:
     size_type   m_len;
     const char* m_str;
 };
+
+static constexpr skl_string_view CEmptyView{};                                        //<! Empty string view
+static constexpr skl_string_view CEmptyCStringView = skl_string_view::exact_cstr(""); //<! Empty c-string view
 } // namespace skl
 
 #define SKL_CURRENT_FILE_NAME ::skl::skl_string_view::from_cstr(__FILE__).substr(::skl::skl_string_view::from_cstr(__FILE__).find_last_of('/', '\\') + 1U)
