@@ -11,12 +11,14 @@
 #include "skl_traits/placement_new"
 
 namespace skl {
+void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
+void  skl_vector_free(void* f_block) noexcept;
+void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
+} // namespace skl
+
+namespace skl {
 template <typename, u64, u64>
 class iskl_vector;
-
-extern void* skl_vector_alloc(u64 f_bytes_count, u64 f_allignment) noexcept;
-extern void  skl_vector_free(void* f_block) noexcept;
-extern void  skl_vector_memcpy(void* f_dest, const void* f_src, u64 f_bytes_count) noexcept;
 } // namespace skl
 
 namespace skl {

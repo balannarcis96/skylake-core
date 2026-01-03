@@ -10,6 +10,7 @@
 #include <cerrno>
 
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 
@@ -46,6 +47,17 @@ bool set_sock_blocking(socket_t f_socket, bool f_blocking) noexcept {
     }
 
     return true;
+}
+
+bool set_sock_nodelay(socket_t f_socket, bool f_enable) noexcept {
+    const auto flag   = i32(f_enable);
+    const auto result = setsockopt(f_socket,
+                                   IPPROTO_TCP,
+                                   TCP_NODELAY,
+                                   &flag,
+                                   sizeof(flag));
+
+    return result < 0 ? false : true;
 }
 
 bool set_udp_sock_broadcast(socket_t f_udp_socket, bool f_enable) noexcept {

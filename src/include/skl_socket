@@ -33,6 +33,9 @@ constexpr socket_t CInvalidSocket = -1;
 //! Set the blocking mode of the socket
 [[nodiscard]] bool set_sock_blocking(socket_t f_socket, bool f_blocking) noexcept;
 
+//! Set the no delay (Nagle's algorithm) flag of the tcp socket
+[[nodiscard]] bool set_sock_nodelay(socket_t f_socket, bool f_enable = false) noexcept;
+
 //! Set the broadcast flag of the udp socket
 [[nodiscard]] bool set_udp_sock_broadcast(socket_t f_udp_socket, bool f_enable) noexcept;
 
