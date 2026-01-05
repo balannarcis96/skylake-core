@@ -215,10 +215,15 @@ public:
     static void destroy_pool() noexcept;
 
     //! Allocate a buffer of given size from the pool
+    //! \remark Returned buffer has 8-byte header overhead (size stored internally)
     static buffer_t buffer_alloc(u32 f_size) noexcept;
 
     //! Free a buffer back to the pool
+    //! \remark Length field is ignored - size is read from internal header
     static void buffer_free(buffer_t f_alloc) noexcept;
+
+    //! Free a buffer by pointer only (size read from internal header)
+    static void buffer_free_ptr(void* f_ptr) noexcept;
 
     //! Allocate and construct an object of type _Object from the pool
     template <typename _Object, typename... _Args>
@@ -245,8 +250,8 @@ public:
             f_object->~_Object();
         }
 
-        const u32 size = round_to_power_of_2(sizeof(_Object));
-        buffer_free(buffer_t{size, reinterpret_cast<byte*>(f_object)});
+        // Size is stored in header - no need to recalculate
+        buffer_free_ptr(f_object);
     }
 };
 } // namespace skl
@@ -281,27 +286,31 @@ public:
             return nullptr;
         }
 
-        const u32 size  = HugePageBufferPool::round_to_power_of_2(static_cast<u32>(f_count * sizeof(_T)));
-        auto      alloc = HugePageBufferPool::buffer_alloc(size);
+        // Check for overflow BEFORE multiplication
+        constexpr u64 CMaxCount = 0xFFFFFFFFull / sizeof(_T);
+        SKL_ASSERT_PERMANENT(f_count <= CMaxCount);
+
+        const u32 total_bytes = static_cast<u32>(f_count * sizeof(_T));
+        auto      alloc       = HugePageBufferPool::buffer_alloc(total_bytes);
 
         SKL_ASSERT_PERMANENT(alloc.buffer != nullptr);
         return reinterpret_cast<_T*>(alloc.buffer);
     }
 
-    static void deallocate(_T* f_ptr, size_type f_count) noexcept {
-        if (f_ptr == nullptr || f_count == 0) {
+    static void deallocate(_T* f_ptr, [[maybe_unused]] size_type f_count) noexcept {
+        if (f_ptr == nullptr) {
             return;
         }
 
-        const u32 size = HugePageBufferPool::round_to_power_of_2(static_cast<u32>(f_count * sizeof(_T)));
-        HugePageBufferPool::buffer_free(HugePageBufferPool::buffer_t{size, reinterpret_cast<byte*>(f_ptr)});
+        // Size is stored in header - f_count is ignored
+        HugePageBufferPool::buffer_free_ptr(f_ptr);
     }
 
     //! Reallocate for google::dense_hash_map/set compatibility
     //! Allocates new buffer, copies old data, frees old buffer
     [[nodiscard]] static _T* reallocate(_T* f_old_ptr, size_type f_old_count, size_type f_new_count) noexcept {
         if (f_new_count == 0) {
-            deallocate(f_old_ptr, f_old_count);
+            deallocate(f_old_ptr, 0);
             return nullptr;
         }
 
@@ -310,7 +319,7 @@ public:
         if (f_old_ptr != nullptr && f_old_count > 0) {
             const size_type copy_count = (f_old_count < f_new_count) ? f_old_count : f_new_count;
             __builtin_memcpy(new_ptr, f_old_ptr, copy_count * sizeof(_T));
-            deallocate(f_old_ptr, f_old_count);
+            deallocate(f_old_ptr, 0);
         }
 
         return new_ptr;

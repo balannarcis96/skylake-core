@@ -79,20 +79,18 @@ TEST_F(HugePageBufferPoolTest, AllocReturnsAlignedMemory) {
     }
 }
 
-TEST_F(HugePageBufferPoolTest, AllocReturnsPowerOf2Size) {
-    // Allocate non-power-of-2 sizes and verify returned size is power of 2
+TEST_F(HugePageBufferPoolTest, AllocReturnsSufficientSize) {
+    // Allocate non-power-of-2 sizes and verify returned size is sufficient
+    // Note: returned length is usable size (bucket size minus 8-byte header)
     const u32 sizes[] = {33, 65, 100, 1000, 5000};
 
     for (u32 size : sizes) {
         auto buffer = Pool::buffer_alloc(size);
         ASSERT_TRUE(buffer.is_valid());
 
-        // Check length is power of 2
-        ASSERT_EQ(buffer.length & (buffer.length - 1), 0u)
-            << "Length " << buffer.length << " is not power of 2";
-
-        // Check length >= requested
-        ASSERT_GE(buffer.length, size);
+        // Check length >= requested (usable space is sufficient)
+        ASSERT_GE(buffer.length, size)
+            << "Length " << buffer.length << " is less than requested " << size;
 
         Pool::buffer_free(buffer);
     }
@@ -159,12 +157,13 @@ TEST_F(HugePageBufferPoolTest, BufferGetSizeForBucket) {
 
 TEST_F(HugePageBufferPoolTest, AllBucketSizes) {
     // Test allocation from every bucket (5-21)
+    // Note: returned length is usable size (bucket size minus 8-byte header)
     for (u32 bucket = 5; bucket <= 21; ++bucket) {
         u32  size   = 1u << bucket;
         auto buffer = Pool::buffer_alloc(size);
 
         ASSERT_TRUE(buffer.is_valid()) << "Failed for bucket " << bucket;
-        ASSERT_EQ(buffer.length, size) << "Wrong size for bucket " << bucket;
+        ASSERT_GE(buffer.length, size) << "Insufficient size for bucket " << bucket;
 
         // Write pattern to verify memory is usable
         std::memset(buffer.buffer, 0xAB, size);
@@ -177,14 +176,15 @@ TEST_F(HugePageBufferPoolTest, AllBucketSizes) {
 
 TEST_F(HugePageBufferPoolTest, MaxSizeAllocation) {
     // 2MB allocation (bucket 21)
-    constexpr u32 max_size = 1u << 21;
-    auto          buffer   = Pool::buffer_alloc(max_size);
+    // Note: returned length is usable size (bucket size minus 8-byte header)
+    constexpr u32 requested_size = 1u << 21;
+    auto          buffer         = Pool::buffer_alloc(requested_size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, max_size);
+    ASSERT_GE(buffer.length, requested_size);
 
     // Write to verify memory is accessible
-    std::memset(buffer.buffer, 0xCD, max_size);
+    std::memset(buffer.buffer, 0xCD, requested_size);
 
     Pool::buffer_free(buffer);
 }
@@ -563,7 +563,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation4MB) {
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern to verify memory is accessible
     std::memset(buffer.buffer, 0xAB, size);
@@ -578,7 +578,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation8MB) {
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern
     std::memset(buffer.buffer, 0xCD, size);
@@ -593,7 +593,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation16MB) {
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern
     std::memset(buffer.buffer, 0xEF, size);
@@ -608,7 +608,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation32MB) {
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern
     std::memset(buffer.buffer, 0x12, size);
@@ -623,7 +623,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation64MB) {
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern
     std::memset(buffer.buffer, 0x34, size);
@@ -633,12 +633,13 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation64MB) {
     Pool::buffer_free(buffer);
 }
 
-TEST_F(HugePageBufferPoolTest, MultiPageAllocation128MB) {
-    constexpr u32 size = 1u << 27; // 128MB (bucket 27, 64 huge pages)
+TEST_F(HugePageBufferPoolTest, MultiPageAllocationMaxSize) {
+    // Max requestable size is 128MB - 8 bytes (header overhead)
+    constexpr u32 size = (1u << 27) - 8; // 128MB - 8 (bucket 27)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, size);
+    ASSERT_GE(buffer.length, size);
 
     // Write pattern
     std::memset(buffer.buffer, 0x56, size);
@@ -649,19 +650,18 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation128MB) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageNonPowerOf2Size) {
-    // 33MB request should round up to 64MB (bucket 26)
+    // 33MB request should round up to 64MB bucket, usable = 64MB - 8
     constexpr u32 requested_size = 33u << 20; // 33MB
-    constexpr u32 expected_size  = 1u << 26;  // 64MB
 
     auto buffer = Pool::buffer_alloc(requested_size);
 
     ASSERT_TRUE(buffer.is_valid());
-    ASSERT_EQ(buffer.length, expected_size);
+    ASSERT_GE(buffer.length, requested_size);
 
-    // Verify we can use the full allocated size
-    std::memset(buffer.buffer, 0x78, expected_size);
+    // Verify we can use the requested size
+    std::memset(buffer.buffer, 0x78, requested_size);
     ASSERT_EQ(buffer.buffer[0], 0x78);
-    ASSERT_EQ(buffer.buffer[expected_size - 1], 0x78);
+    ASSERT_EQ(buffer.buffer[requested_size - 1], 0x78);
 
     Pool::buffer_free(buffer);
 }
@@ -695,7 +695,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageMultipleAllocations) {
     for (int i = 0; i < 5; ++i) {
         auto buffer = Pool::buffer_alloc(size);
         ASSERT_TRUE(buffer.is_valid()) << "Failed at allocation " << i;
-        ASSERT_EQ(buffer.length, size);
+        ASSERT_GE(buffer.length, size);
         buffers.push_back(buffer);
         addresses.insert(buffer.buffer);
     }
@@ -730,13 +730,14 @@ TEST_F(HugePageBufferPoolTest, MultiPageWriteReadPattern) {
 }
 
 TEST_F(HugePageBufferPoolTest, AllMultiPageBuckets) {
-    // Test allocation from every multi-page bucket (22-27)
-    for (u32 bucket = 22; bucket <= 27; ++bucket) {
+    // Test allocation from every multi-page bucket (22-26)
+    // Bucket 27 (128MB) tested separately due to header overhead limit
+    for (u32 bucket = 22; bucket <= 26; ++bucket) {
         u32  size   = 1u << bucket;
         auto buffer = Pool::buffer_alloc(size);
 
         ASSERT_TRUE(buffer.is_valid()) << "Failed for bucket " << bucket;
-        ASSERT_EQ(buffer.length, size) << "Wrong size for bucket " << bucket;
+        ASSERT_GE(buffer.length, size) << "Insufficient size for bucket " << bucket;
 
         // Verify memory is usable at boundaries
         buffer.buffer[0]        = 0xAA;
@@ -746,4 +747,52 @@ TEST_F(HugePageBufferPoolTest, AllMultiPageBuckets) {
 
         Pool::buffer_free(buffer);
     }
+}
+
+// =============================================================================
+// Header Mechanism Tests
+// =============================================================================
+
+TEST_F(HugePageBufferPoolTest, HeaderSizeCorrectlyDeducted) {
+    // Verify that returned length is bucket_size - 8 (header overhead)
+    // Request 24 bytes -> bucket 5 (32 bytes) -> usable = 24 bytes
+    {
+        auto buffer = Pool::buffer_alloc(24);
+        ASSERT_TRUE(buffer.is_valid());
+        ASSERT_EQ(buffer.length, 24u); // Exactly 32 - 8
+        Pool::buffer_free(buffer);
+    }
+
+    // Request 56 bytes -> bucket 6 (64 bytes) -> usable = 56 bytes
+    {
+        auto buffer = Pool::buffer_alloc(56);
+        ASSERT_TRUE(buffer.is_valid());
+        ASSERT_EQ(buffer.length, 56u); // Exactly 64 - 8
+        Pool::buffer_free(buffer);
+    }
+
+    // Request 120 bytes -> bucket 7 (128 bytes) -> usable = 120 bytes
+    {
+        auto buffer = Pool::buffer_alloc(120);
+        ASSERT_TRUE(buffer.is_valid());
+        ASSERT_EQ(buffer.length, 120u); // Exactly 128 - 8
+        Pool::buffer_free(buffer);
+    }
+}
+
+TEST_F(HugePageBufferPoolTest, FreeByPointerOnly) {
+    // Verify buffer_free_ptr works without needing the size
+    auto buffer = Pool::buffer_alloc(100);
+    ASSERT_TRUE(buffer.is_valid());
+
+    // Write pattern
+    std::memset(buffer.buffer, 0xAB, 100);
+
+    // Free using pointer-only API
+    Pool::buffer_free_ptr(buffer.buffer);
+
+    // Allocate again - should succeed (pool not corrupted)
+    auto buffer2 = Pool::buffer_alloc(100);
+    ASSERT_TRUE(buffer2.is_valid());
+    Pool::buffer_free(buffer2);
 }

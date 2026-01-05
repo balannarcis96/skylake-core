@@ -13,6 +13,21 @@ struct free_node_t {
     free_node_t* next;
 };
 
+//! Buffer header - stored at start of allocated buffer (8 bytes)
+//! User pointer is rebased past this header
+struct buffer_header_t {
+    u32 allocated_size; //!< Actual allocated size (power of 2, includes header)
+#if !SKL_BUILD_SHIPPING
+    u32 magic; //!< Debug magic number for validation
+#else
+    u32 _padding; //!< Keep 8-byte alignment in shipping
+#endif
+};
+static_assert(sizeof(buffer_header_t) == 8, "Header must be 8 bytes for alignment");
+
+//! Magic number for debug validation
+constexpr u32 CBufferMagic = 0xB0FFE42D;
+
 //! Tracking entry for allocated huge pages
 struct hugepage_ptr_t {
     void* ptr;
@@ -21,7 +36,7 @@ struct hugepage_ptr_t {
 
 //! Pool metadata - fits in one huge page
 struct metadata_t {
-    //! Head pointers for each bucket's intrusive freelist (indices 5-21 used)
+    //! Head pointers for each bucket's intrusive freelist (indices 5-27 used)
     free_node_t* bucket_heads[28u] = {};
 
     //! Tracking of all allocated huge pages (buffer pages only, no freelist overhead)
@@ -36,6 +51,7 @@ constexpr u8  CMinBucketIndex = 5u;                    //!< Minimum bucket index
 constexpr u8  CMaxBucketIndex = 27u;                   //!< Maximum bucket index (27 for 128MB buffers)
 constexpr u8  CMaxBuckets     = CMaxBucketIndex + 1u;  //!< Total bucket indices
 constexpr u64 CMaxBufferSize  = 1u << CMaxBucketIndex; //!< Maximum buffer size (128MB)
+constexpr u32 CHeaderSize     = sizeof(buffer_header_t); //!< Size of buffer header (8 bytes)
 
 static_assert(sizeof(free_node_t) <= (1u << CMinBucketIndex), "Free node must fit in minimum buffer size");
 
@@ -193,14 +209,15 @@ void HugePageBufferPool::destroy_pool() noexcept {
 }
 
 HugePageBufferPool::buffer_t HugePageBufferPool::buffer_alloc(u32 f_size) noexcept {
-    SKL_ASSERT_PERMANENT((nullptr != g_metadata) && (f_size <= CMaxBufferSize));
+    // Max requestable size accounts for header overhead
+    constexpr u32 CMaxRequestSize = CMaxBufferSize - CHeaderSize;
 
-    auto bucket_result = buffer_get_pool_index(f_size);
-    if (bucket_result.is_failure()) [[unlikely]] {
-        return {};
-    }
+    SKL_ASSERT_PERMANENT((nullptr != g_metadata) && (f_size <= CMaxRequestSize));
 
-    const u32 bucket_index = bucket_result.value();
+    // Safe to add now - overflow is impossible after the above check
+    const u32 total_size = f_size + CHeaderSize;
+
+    const u32 bucket_index = buffer_get_pool_index(total_size).value();
     const u32 actual_size  = buffer_get_size_for_bucket(bucket_index);
 
     void* ptr = nullptr;
@@ -284,97 +301,121 @@ HugePageBufferPool::buffer_t HugePageBufferPool::buffer_alloc(u32 f_size) noexce
         return {};
     }
 
+    // Write header at start of buffer
+    auto* header             = reinterpret_cast<buffer_header_t*>(ptr);
+    header->allocated_size   = actual_size;
 #if !SKL_BUILD_SHIPPING
-    g_allocated_buffers[bucket_index].insert(ptr);
+    header->magic            = CBufferMagic;
 #endif
 
-    return buffer_t{actual_size, reinterpret_cast<byte*>(ptr)};
+    // Rebase pointer past header for user
+    byte* user_ptr       = reinterpret_cast<byte*>(ptr) + CHeaderSize;
+    const u32 usable_size = actual_size - CHeaderSize;
+
+#if !SKL_BUILD_SHIPPING
+    g_allocated_buffers[bucket_index].insert(user_ptr);
+#endif
+
+    return buffer_t{usable_size, user_ptr};
 }
 
 void HugePageBufferPool::buffer_free(buffer_t f_alloc) noexcept {
-    SKL_ASSERT_PERMANENT((nullptr != g_metadata) && (nullptr != f_alloc.buffer));
+    HugePageBufferPool::buffer_free_ptr(f_alloc.buffer);
+}
 
-    auto bucket_result = buffer_get_pool_index(f_alloc.length);
-    if (bucket_result.is_failure()) [[unlikely]] {
-        return;
-    }
+void HugePageBufferPool::buffer_free_ptr(void* f_ptr) noexcept {
+    SKL_ASSERT_PERMANENT((nullptr != g_metadata) && (nullptr != f_ptr));
 
-    const u32 bucket_index = bucket_result.value();
+    // Get header from user pointer (rebase back)
+    auto* header = reinterpret_cast<buffer_header_t*>(static_cast<byte*>(f_ptr) - CHeaderSize);
 
 #if !SKL_BUILD_SHIPPING
-    validate_buffer_for_free(f_alloc.buffer, bucket_index);
+    // Validate magic number to detect corruption/double-free
+    SKL_ASSERT_PERMANENT((header->magic == CBufferMagic) && "Invalid buffer header - corruption or double-free");
+    header->magic = 0; // Clear magic to detect double-free
 #endif
+
+    // Get bucket from stored size (not user-provided!)
+    const u32 actual_size  = header->allocated_size;
+    const u32 bucket_index = buffer_get_pool_index(actual_size).value();
+
+#if !SKL_BUILD_SHIPPING
+    validate_buffer_for_free(f_ptr, bucket_index);
+#endif
+
+    // Free the raw pointer (header start, not user pointer)
+    void* raw_ptr = header;
 
     // Dispatch to bucket
     switch (bucket_index) {
         case 5:
-            free_to_bucket<5>(f_alloc.buffer);
+            free_to_bucket<5>(raw_ptr);
             break;
         case 6:
-            free_to_bucket<6>(f_alloc.buffer);
+            free_to_bucket<6>(raw_ptr);
             break;
         case 7:
-            free_to_bucket<7>(f_alloc.buffer);
+            free_to_bucket<7>(raw_ptr);
             break;
         case 8:
-            free_to_bucket<8>(f_alloc.buffer);
+            free_to_bucket<8>(raw_ptr);
             break;
         case 9:
-            free_to_bucket<9>(f_alloc.buffer);
+            free_to_bucket<9>(raw_ptr);
             break;
         case 10:
-            free_to_bucket<10>(f_alloc.buffer);
+            free_to_bucket<10>(raw_ptr);
             break;
         case 11:
-            free_to_bucket<11>(f_alloc.buffer);
+            free_to_bucket<11>(raw_ptr);
             break;
         case 12:
-            free_to_bucket<12>(f_alloc.buffer);
+            free_to_bucket<12>(raw_ptr);
             break;
         case 13:
-            free_to_bucket<13>(f_alloc.buffer);
+            free_to_bucket<13>(raw_ptr);
             break;
         case 14:
-            free_to_bucket<14>(f_alloc.buffer);
+            free_to_bucket<14>(raw_ptr);
             break;
         case 15:
-            free_to_bucket<15>(f_alloc.buffer);
+            free_to_bucket<15>(raw_ptr);
             break;
         case 16:
-            free_to_bucket<16>(f_alloc.buffer);
+            free_to_bucket<16>(raw_ptr);
             break;
         case 17:
-            free_to_bucket<17>(f_alloc.buffer);
+            free_to_bucket<17>(raw_ptr);
             break;
         case 18:
-            free_to_bucket<18>(f_alloc.buffer);
+            free_to_bucket<18>(raw_ptr);
             break;
         case 19:
-            free_to_bucket<19>(f_alloc.buffer);
+            free_to_bucket<19>(raw_ptr);
             break;
         case 20:
-            free_to_bucket<20>(f_alloc.buffer);
+            free_to_bucket<20>(raw_ptr);
             break;
         case 21:
-            free_to_bucket<21>(f_alloc.buffer);
+            free_to_bucket<21>(raw_ptr);
             break;
         case 22:
-            free_to_bucket<22>(f_alloc.buffer);
+            free_to_bucket<22>(raw_ptr);
             break;
         case 23:
-            free_to_bucket<23>(f_alloc.buffer);
+            free_to_bucket<23>(raw_ptr);
             break;
         case 24:
-            free_to_bucket<24>(f_alloc.buffer);
+            free_to_bucket<24>(raw_ptr);
             break;
         case 25:
-            free_to_bucket<25>(f_alloc.buffer);
+            free_to_bucket<25>(raw_ptr);
             break;
         case 26:
-            free_to_bucket<26>(f_alloc.buffer);
+            free_to_bucket<26>(raw_ptr);
             break;
         case 27:
-            free_to_bucket<27>(f_alloc.buffer);
+            free_to_bucket<27>(raw_ptr);
             break;
         default:
             SKL_ASSERT_PERMANENT(false && "Invalid bucket index");
