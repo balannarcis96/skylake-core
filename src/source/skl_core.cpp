@@ -41,7 +41,7 @@ skl_status skl_core_init() noexcept {
         return SKL_OK_REDUNDANT;
     }
 
-    if (huge_pages::skl_huge_pages_init()) {
+    if (huge_pages::internal::skl_huge_pages_init()) {
         std::print("SKL_CORE: Huge pages enabled! PageSize: {} bytes \n", huge_pages::CHugePageSize);
     } else {
         puts("SKL_CORE: Huge pages not available");
@@ -71,6 +71,10 @@ skl_status skl_core_init() noexcept {
     puts("SKL_CORE_INIT!");
 #endif
     return SKL_SUCCESS;
+}
+
+bool skl_core_is_initialized() noexcept{
+    return g_is_skl_core_init.load_relaxed();
 }
 
 skl_status skl_core_init_thread() noexcept {

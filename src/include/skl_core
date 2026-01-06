@@ -16,6 +16,9 @@ namespace skl {
 //! \remark Can be called multiple times. Returns SKL_OK_REDUNDANT if already init.
 [[nodiscard]] skl_status skl_core_init() noexcept;
 
+//! [ThreadSafe] Has skl_core_init() been successfully called
+[[nodiscard]] bool skl_core_is_initialized() noexcept;
+
 //! [ThreadLocal] Call this first thing on each thread that uses the skl core library
 //! \remark Performs thread specific initialization
 //! \remark No need to call this on the main thread(the thread that called skl_core_init())

@@ -5,10 +5,12 @@
 //!
 #include <sys/mman.h>
 #include <unistd.h>
+#include <cstdio>
 
 #include "skl_huge_pages"
 #include "skl_assert"
 #include "skl_vector"
+#include "skl_core"
 
 namespace {
 //! [Internal] Global flag indicating if huge pages are available
@@ -16,6 +18,33 @@ bool g_huge_pages_available = false;
 
 //! [Internal] Cached system page size
 u64 g_sys_page_size = 0u;
+
+//! [Internal] Cached system huge page size
+u64 g_sys_huge_page_size = 0u;
+
+//! [Internal] Read the system's default huge page size from /proc/meminfo
+//! \return The huge page size in bytes, or 0 if not available
+u64 read_system_huge_page_size() noexcept {
+    FILE* file = ::fopen("/proc/meminfo", "r");
+    if (nullptr == file) {
+        return 0u;
+    }
+
+    char line[256];
+    u64  hugepage_size_kb = 0u;
+
+    while (::fgets(line, sizeof(line), file) != nullptr) {
+        // Look for "Hugepagesize:" line (e.g., "Hugepagesize:       2048 kB")
+        if (::sscanf(line, "Hugepagesize: %lu kB", &hugepage_size_kb) == 1) {
+            break;
+        }
+    }
+
+    ::fclose(file);
+
+    // Convert from kB to bytes
+    return hugepage_size_kb * 1024u;
+}
 
 //! [Internal] Pin pages by touching them to force kernel allocation
 //!
@@ -36,30 +65,43 @@ inline void pin_huge_pages(void* f_ptr, u64 f_page_count) noexcept {
 } // namespace
 
 namespace skl::huge_pages {
-bool skl_huge_pages_init() noexcept {
-    // Get system page size
-    const long page_size = ::sysconf(_SC_PAGESIZE);
-    SKL_ASSERT_PERMANENT(page_size > 0);
-    g_sys_page_size = static_cast<u64>(page_size);
+namespace internal {
+    bool skl_huge_pages_init() noexcept {
+        // Get system page size
+        const long page_size = ::sysconf(_SC_PAGESIZE);
+        SKL_ASSERT_PERMANENT(page_size > 0);
+        g_sys_page_size = static_cast<u64>(page_size);
 
-    // Try to allocate a single 2MB huge page as a test
-    void* test_ptr = ::mmap(nullptr,
-                            CHugePageSize,
-                            PROT_READ | PROT_WRITE,
-                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
-                            -1,
-                            0);
+        // Get system huge page size
+        g_sys_huge_page_size = read_system_huge_page_size();
 
-    if (test_ptr == MAP_FAILED) {
-        g_huge_pages_available = false;
-        return false;
+        // Try to allocate a single 2MB huge page as a test
+        void* test_ptr = ::mmap(nullptr,
+                                CHugePageSize,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+                                -1,
+                                0);
+
+        if (test_ptr == MAP_FAILED) {
+            g_huge_pages_available = false;
+            return false;
+        }
+
+        // Free the test allocation (no need to pin, we're just testing availability)
+        ::munmap(test_ptr, CHugePageSize);
+
+        // Hugepages are available - verify size matches our expected constant
+        SKL_ASSERT_PERMANENT(g_sys_huge_page_size == CHugePageSize
+                             && "System huge page size does not match CHugePageSize (expected 2MB)");
+
+        g_huge_pages_available = true;
+        return true;
     }
+} // namespace internal
 
-    // Free the test allocation (no need to pin, we're just testing availability)
-    ::munmap(test_ptr, CHugePageSize);
-
-    g_huge_pages_available = true;
-    return true;
+u64 get_system_huge_page_size() noexcept {
+    return g_sys_huge_page_size;
 }
 
 bool is_huge_pages_enabled() noexcept {
@@ -67,6 +109,8 @@ bool is_huge_pages_enabled() noexcept {
 }
 
 void* skl_huge_page_alloc(u64 f_page_count) noexcept {
+    SKL_ASSERT_CRITICAL(skl_core_is_initialized());
+
 #if defined(SKL_CORE_FORCE_HUGEPAGE_SUPPORT)
     SKL_ASSERT_PERMANENT(g_huge_pages_available && "Huge pages are not available");
     SKL_ASSERT_PERMANENT(f_page_count > 0u);

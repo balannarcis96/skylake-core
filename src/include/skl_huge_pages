@@ -14,14 +14,16 @@ namespace skl::huge_pages {
 //! [Const] Standard huge page size on x86_64 Linux (2MB)
 constexpr u64 CHugePageSize = (2ull * 1024ull * 1024ull);
 
-//! [Init] Initialize huge pages subsystem
-//!
-//! \returns True if huge pages are available, false otherwise
-//!
-//! \remark Must be called before using any allocation functions
-//! \remark Tests huge page availability by attempting a test allocation
-//! \remark Sets internal global flag used by is_huge_pages_enabled()
-[[nodiscard]] bool skl_huge_pages_init() noexcept;
+namespace internal {
+    //! [System] Initialize huge pages subsystem
+    //!
+    //! \returns True if huge pages are available, false otherwise
+    //!
+    //! \remark Must be called before using any allocation functions
+    //! \remark Tests huge page availability by attempting a test allocation
+    //! \remark Sets internal global flag used by is_huge_pages_enabled()
+    [[nodiscard]] bool skl_huge_pages_init() noexcept;
+} // namespace internal
 
 //! [Getter] Check if huge pages are enabled
 //!
@@ -55,6 +57,13 @@ void skl_huge_page_free(void* f_ptr, u64 f_page_count) noexcept;
 //!
 //! \returns System page size in bytes (typically 4096)
 [[nodiscard]] u64 get_system_page_size() noexcept;
+
+//! [Util] Get the system huge page size
+//!
+//! \returns System huge page size in bytes (typically 2097152 = 2MB)
+//! \remark Returns the value read from /proc/meminfo during init
+//! \remark Returns 0 if skl_huge_pages_init() was not called or huge pages unavailable
+[[nodiscard]] u64 get_system_huge_page_size() noexcept;
 
 //! [Util] Calculate how many 2MB pages are needed for a byte size
 //!

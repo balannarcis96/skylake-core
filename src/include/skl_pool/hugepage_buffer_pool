@@ -155,6 +155,16 @@ public:
             return m_data != nullptr;
         }
 
+        //! Nullptr equality (nullptr on left side)
+        [[nodiscard]] friend bool operator==(decltype(nullptr), const ptr_t& f_ptr) noexcept {
+            return f_ptr.m_data == nullptr;
+        }
+
+        //! Nullptr inequality (nullptr on left side)
+        [[nodiscard]] friend bool operator!=(decltype(nullptr), const ptr_t& f_ptr) noexcept {
+            return f_ptr.m_data != nullptr;
+        }
+
         //! Less than (for ordered containers)
         [[nodiscard]] bool operator<(const ptr_t& f_other) const noexcept {
             return m_data < f_other.m_data;
