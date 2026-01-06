@@ -122,15 +122,15 @@ TEST_F(HugePageBufferPoolTest, BucketIndexBoundaries) {
     };
 
     const TestCase cases[] = {
-        {32, 5},       // Exact 32
-        {33, 6},       // Just over 32 -> 64
-        {64, 6},       // Exact 64
-        {65, 7},       // Just over 64 -> 128
-        {128, 7},      // Exact 128
-        {256, 8},      // Exact 256
-        {1024, 10},    // Exact 1KB
-        {4096, 12},    // Exact 4KB
-        {65536, 16},   // Exact 64KB
+        {     32,  5}, // Exact 32
+        {     33,  6}, // Just over 32 -> 64
+        {     64,  6}, // Exact 64
+        {     65,  7}, // Just over 64 -> 128
+        {    128,  7}, // Exact 128
+        {    256,  8}, // Exact 256
+        {   1024, 10}, // Exact 1KB
+        {   4096, 12}, // Exact 4KB
+        {  65536, 16}, // Exact 64KB
         {1 << 20, 20}, // Exact 1MB
         {1 << 21, 21}, // Exact 2MB (max)
     };
@@ -194,9 +194,9 @@ TEST_F(HugePageBufferPoolTest, MaxSizeAllocation) {
 // =============================================================================
 
 TEST_F(HugePageBufferPoolTest, MultipleAllocSameSize) {
-    const u32                     count = 100;
-    std::vector<Pool::buffer_t>   buffers;
-    std::set<void*>               addresses;
+    const u32                   count = 100;
+    std::vector<Pool::buffer_t> buffers;
+    std::set<void*>             addresses;
 
     for (u32 i = 0; i < count; ++i) {
         auto buffer = Pool::buffer_alloc(64);
@@ -539,15 +539,15 @@ TEST_F(HugePageBufferPoolTest, MultiPageBucketIndices) {
     };
 
     const TestCase cases[] = {
-        {1u << 22, 22},        // 4MB
-        {1u << 23, 23},        // 8MB
-        {1u << 24, 24},        // 16MB
-        {1u << 25, 25},        // 32MB
-        {1u << 26, 26},        // 64MB
-        {1u << 27, 27},        // 128MB
-        {(1u << 21) + 1, 22},  // 2MB + 1 -> 4MB
-        {(1u << 22) + 1, 23},  // 4MB + 1 -> 8MB
-        {33u << 20, 26},       // 33MB -> 64MB (bucket 26)
+        {      1u << 22, 22}, // 4MB
+        {      1u << 23, 23}, // 8MB
+        {      1u << 24, 24}, // 16MB
+        {      1u << 25, 25}, // 32MB
+        {      1u << 26, 26}, // 64MB
+        {      1u << 27, 27}, // 128MB
+        {(1u << 21) + 1, 22}, // 2MB + 1 -> 4MB
+        {(1u << 22) + 1, 23}, // 4MB + 1 -> 8MB
+        {     33u << 20, 26}, // 33MB -> 64MB (bucket 26)
     };
 
     for (const auto& tc : cases) {
@@ -559,7 +559,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageBucketIndices) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocation4MB) {
-    constexpr u32 size = 1u << 22; // 4MB (bucket 22, 2 huge pages)
+    constexpr u32 size   = 1u << 22; // 4MB (bucket 22, 2 huge pages)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
@@ -574,7 +574,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation4MB) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocation8MB) {
-    constexpr u32 size = 1u << 23; // 8MB (bucket 23, 4 huge pages)
+    constexpr u32 size   = 1u << 23; // 8MB (bucket 23, 4 huge pages)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
@@ -589,7 +589,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation8MB) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocation16MB) {
-    constexpr u32 size = 1u << 24; // 16MB (bucket 24, 8 huge pages)
+    constexpr u32 size   = 1u << 24; // 16MB (bucket 24, 8 huge pages)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
@@ -604,7 +604,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation16MB) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocation32MB) {
-    constexpr u32 size = 1u << 25; // 32MB (bucket 25, 16 huge pages)
+    constexpr u32 size   = 1u << 25; // 32MB (bucket 25, 16 huge pages)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
@@ -619,7 +619,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation32MB) {
 }
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocation64MB) {
-    constexpr u32 size = 1u << 26; // 64MB (bucket 26, 32 huge pages)
+    constexpr u32 size   = 1u << 26; // 64MB (bucket 26, 32 huge pages)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());
@@ -635,7 +635,7 @@ TEST_F(HugePageBufferPoolTest, MultiPageAllocation64MB) {
 
 TEST_F(HugePageBufferPoolTest, MultiPageAllocationMaxSize) {
     // Max requestable size is 128MB - 8 bytes (header overhead)
-    constexpr u32 size = (1u << 27) - 8; // 128MB - 8 (bucket 27)
+    constexpr u32 size   = (1u << 27) - 8; // 128MB - 8 (bucket 27)
     auto          buffer = Pool::buffer_alloc(size);
 
     ASSERT_TRUE(buffer.is_valid());

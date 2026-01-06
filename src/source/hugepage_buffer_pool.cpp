@@ -324,7 +324,9 @@ void HugePageBufferPool::buffer_free(buffer_t f_alloc) noexcept {
 }
 
 void HugePageBufferPool::buffer_free_ptr(void* f_ptr) noexcept {
-    SKL_ASSERT_PERMANENT((nullptr != g_metadata) && (nullptr != f_ptr));
+    SKL_ASSERT_PERMANENT((nullptr != g_metadata)
+                         && "HugePageBufferPool already destroyed: free all hugepage allocations before skl_core_deinit()");
+    SKL_ASSERT_PERMANENT(nullptr != f_ptr);
 
     // Get header from user pointer (rebase back)
     auto* header = reinterpret_cast<buffer_header_t*>(static_cast<byte*>(f_ptr) - CHeaderSize);
