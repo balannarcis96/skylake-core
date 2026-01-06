@@ -134,11 +134,11 @@ void* skl_huge_page_alloc_or_fallback(u64 f_page_count) noexcept {
 }
 
 void skl_huge_page_free_or_fallback(void* f_ptr, u64 f_page_count) noexcept {
-    if (is_huge_pages_enabled()) {
-        if (nullptr == f_ptr) {
-            return;
-        }
+    if (nullptr == f_ptr) {
+        return;
+    }
 
+    if (is_huge_pages_enabled()) {
         SKL_ASSERT_PERMANENT(f_page_count > 0u);
 
         const u64 total_size = f_page_count * CHugePageSize;

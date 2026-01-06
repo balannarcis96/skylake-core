@@ -224,7 +224,7 @@ public:
         const u32 bit_index   = f_index & CBitSizeOfSliceMask;
 
         // Validate index
-        SKL_ASSERT(validate_bit_index(f_index));
+        SKL_ASSERT_CRITICAL(validate_bit_index(f_index));
 
         auto& slice = m_slices[slice_index];
 
@@ -246,7 +246,7 @@ public:
         const auto bit_index   = f_index & CBitSizeOfSliceMask;
 
         // Validate index
-        SKL_ASSERT(validate_bit_index(f_index));
+        SKL_ASSERT_CRITICAL(validate_bit_index(f_index));
 
         auto& slice = m_slices[slice_index];
 
@@ -267,7 +267,7 @@ public:
         const auto bit_index   = f_index & CBitSizeOfSliceMask;
 
         // Validate index
-        SKL_ASSERT(validate_bit_index(f_index));
+        SKL_ASSERT_CRITICAL(validate_bit_index(f_index));
 
         const auto& slice = m_slices[slice_index];
         const auto  mask  = slice_t(1u) << bit_index;

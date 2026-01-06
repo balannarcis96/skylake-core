@@ -5,8 +5,6 @@
 //!
 #pragma once
 
-#include "skl_traits/is_array"
-
 namespace skl {
 template <typename _Type, typename _CharType = char>
 [[nodiscard]] consteval bool is_cstring() noexcept {
@@ -14,7 +12,7 @@ template <typename _Type, typename _CharType = char>
                   || __is_same(_Type, const _CharType*)
                   || __is_same(_Type, volatile _CharType*)
                   || __is_same(_Type, const volatile _CharType*)
-                  || (is_array_v<_Type> && __is_same(is_array<_Type>::type, _CharType))) {
+                  || (__is_array(_Type) && __is_same(__remove_all_extents(_Type), _CharType))) {
         return true;
     } else {
         return false;
@@ -22,5 +20,5 @@ template <typename _Type, typename _CharType = char>
 }
 
 template <typename _Type, typename _CharType = char>
-constexpr bool is_cstring_v = is_cstring_v<_Type, _CharType>();
+constexpr bool is_cstring_v = is_cstring<_Type, _CharType>();
 } // namespace skl

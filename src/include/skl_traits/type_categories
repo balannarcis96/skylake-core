@@ -1,0 +1,75 @@
+//!
+//! \file type_categories
+//!
+//! \brief Type category traits using Clang built-ins
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+namespace skl {
+// Primary type categories using Clang built-ins
+template <typename T>
+inline constexpr bool is_pointer_v = __is_pointer(T);
+
+template <typename T>
+inline constexpr bool is_integral_v = __is_integral(T);
+
+template <typename T>
+inline constexpr bool is_floating_point_v = __is_floating_point(T);
+
+template <typename T>
+inline constexpr bool is_enum_v = __is_enum(T);
+
+template <typename T>
+inline constexpr bool is_class_v = __is_class(T);
+
+template <typename T>
+inline constexpr bool is_union_v = __is_union(T);
+
+template <typename T>
+inline constexpr bool is_array_v = __is_array(T);
+
+template <typename T>
+inline constexpr bool is_void_v = __is_void(T);
+
+// Type properties
+template <typename T>
+inline constexpr bool is_trivially_copyable_v = __is_trivially_copyable(T);
+
+template <typename T>
+inline constexpr bool is_trivially_destructible_v = __is_trivially_destructible(T);
+
+template <typename T>
+inline constexpr bool is_standard_layout_v = __is_standard_layout(T);
+
+template <typename T>
+inline constexpr bool is_empty_v = __is_empty(T);
+
+template <typename T>
+inline constexpr bool is_polymorphic_v = __is_polymorphic(T);
+
+template <typename T>
+inline constexpr bool is_abstract_v = __is_abstract(T);
+
+template <typename T>
+inline constexpr bool is_final_v = __is_final(T);
+
+template <typename T>
+inline constexpr bool is_signed_v = __is_signed(T);
+
+template <typename T>
+inline constexpr bool is_unsigned_v = __is_unsigned(T);
+
+// Compound type categories
+template <typename T>
+inline constexpr bool is_arithmetic_v = is_integral_v<T> || is_floating_point_v<T>;
+
+template <typename T>
+inline constexpr bool is_scalar_v = is_arithmetic_v<T> || is_enum_v<T> || is_pointer_v<T>;
+
+// Valid for atomic operations
+template <typename T>
+inline constexpr bool is_atomic_compatible_v =
+    is_pointer_v<T> || is_integral_v<T> || is_floating_point_v<T> || is_enum_v<T>;
+} // namespace skl

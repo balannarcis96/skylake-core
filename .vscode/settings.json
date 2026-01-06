@@ -31,7 +31,7 @@
     "cmake.ctest.parallelJobs": 8,
     "cmake.configureArgs": [
         "-DSKL_TUNE_PRESET=qa",
-        "-DSKL_BUILD_TYPE=STAGING"
+        "-DSKL_BUILD_TYPE=DEV"
     ],
     "cmake.ctestArgs": [
         "--verbose"
@@ -168,6 +168,9 @@
         "huge_pages_allocator": "cpp",
         "hugepage_buffer_pool": "cpp",
         "same_as": "cpp",
+        "integral_constant": "cpp",
+        "is_lock_free": "cpp",
+        "type_categories": "cpp",
         "ctor": "cpp",
         "size": "cpp",
         "cinttypes": "cpp",
