@@ -79,53 +79,28 @@ void _restore_signals(sigset_t& f_old_set) noexcept {
 } // namespace
 
 namespace {
-void _call_original_signal_handler(int f_signal) noexcept {
+//! Check if a signal handler is a real function (not SIG_DFL or SIG_IGN)
+inline bool _is_callable_handler(__sighandler_t f_handler) noexcept {
+    return f_handler != SIG_DFL && f_handler != SIG_IGN;
+}
+
+void _call_original_termination_handler(int f_signal) noexcept {
     switch (f_signal) {
-        case SIGABRT:
-            {
-                if (nullptr != g_original_SIGABRT) {
-                    g_original_SIGABRT(f_signal);
-                }
-            }
-            break;
-        case SIGFPE:
-            {
-                if (nullptr != g_original_SIGFPE) {
-                    g_original_SIGFPE(f_signal);
-                }
-            }
-            break;
-        case SIGILL:
-            {
-                if (nullptr != g_original_SIGILL) {
-                    g_original_SIGILL(f_signal);
-                }
-            }
-            break;
-        case SIGSEGV:
-            {
-                if (nullptr != g_original_SIGSEGV) {
-                    g_original_SIGSEGV(f_signal);
-                }
-            }
-            break;
         case SIGINT:
             {
-                if (nullptr != g_original_SIGINT) {
+                if (_is_callable_handler(g_original_SIGINT)) {
                     g_original_SIGINT(f_signal);
                 }
             }
             break;
         case SIGTERM:
             {
-                if (nullptr != g_original_SIGTERM) {
+                if (_is_callable_handler(g_original_SIGTERM)) {
                     g_original_SIGTERM(f_signal);
                 }
             }
             break;
         default:
-            {
-            }
             break;
     }
 }
@@ -145,7 +120,10 @@ void _abnormal_exit_handler(int f_signal) noexcept {
         g_sig_handlers_lock.unlock();
     }
 
-    _call_original_signal_handler(f_signal);
+    // Re-raise with default handler to ensure proper termination and core dump
+    // This prevents infinite loop when faulting instruction re-executes
+    (void)::signal(f_signal, SIG_DFL);
+    (void)::raise(f_signal);
 }
 
 void _termination_request_handler(int f_signal) noexcept {
@@ -155,7 +133,8 @@ void _termination_request_handler(int f_signal) noexcept {
         g_sig_handlers_lock.unlock();
     }
 
-    _call_original_signal_handler(f_signal);
+    // Call original handler if it was a custom function (not SIG_DFL/SIG_IGN)
+    _call_original_termination_handler(f_signal);
 }
 } // namespace
 
