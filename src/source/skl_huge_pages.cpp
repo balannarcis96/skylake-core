@@ -45,23 +45,6 @@ u64 read_system_huge_page_size() noexcept {
     // Convert from kB to bytes
     return hugepage_size_kb * 1024u;
 }
-
-//! [Internal] Pin pages by touching them to force kernel allocation
-//!
-//! \param f_ptr Pointer to memory region
-//! \param f_page_count Number of 2MB pages to pin
-//!
-//! \remark Kernel postpones actual physical memory allocation until first page fault
-//! \remark This function forces immediate allocation by writing to each page
-inline void pin_huge_pages(void* f_ptr, u64 f_page_count) noexcept {
-    auto* byte_ptr = static_cast<volatile u8*>(f_ptr);
-
-    // Touch the first byte of each 2MB page to trigger page fault and pin it
-    for (u64 i = 0u; i < f_page_count; ++i) {
-        const u64 page_offset = i * skl::huge_pages::CHugePageSize;
-        byte_ptr[page_offset] = 0u;
-    }
-}
 } // namespace
 
 namespace skl::huge_pages {
@@ -120,14 +103,11 @@ void* skl_huge_page_alloc(u64 f_page_count) noexcept {
     void* ptr = ::mmap(nullptr,
                        total_size,
                        PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_POPULATE,
                        -1,
                        0);
 
     SKL_ASSERT_PERMANENT(ptr != MAP_FAILED);
-
-    // Pin pages to force immediate physical memory allocation
-    pin_huge_pages(ptr, f_page_count);
 
     return ptr;
 #else
@@ -161,14 +141,11 @@ void* skl_huge_page_alloc_or_fallback(u64 f_page_count) noexcept {
         void* ptr = ::mmap(nullptr,
                            total_size,
                            PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB,
+                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_POPULATE,
                            -1,
                            0);
 
         SKL_ASSERT_PERMANENT(ptr != MAP_FAILED);
-
-        // Pin pages to force immediate physical memory allocation
-        pin_huge_pages(ptr, f_page_count);
 
         return ptr;
     }

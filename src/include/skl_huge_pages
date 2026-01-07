@@ -40,7 +40,7 @@ namespace internal {
 //! \remark Asserts that huge pages are available (must call skl_huge_pages_init() first)
 //! \remark Allocates f_page_count * 2MB bytes
 //! \remark Memory is automatically 2MB-aligned by the kernel
-//! \remark Pages are pinned immediately to force physical memory allocation
+//! \remark Pages are pre-populated via MAP_POPULATE to force immediate physical allocation
 //! \remark Allocated memory must be freed with skl_huge_page_free()
 [[nodiscard]] void* skl_huge_page_alloc(u64 f_page_count) noexcept;
 
@@ -86,7 +86,7 @@ void skl_huge_page_free(void* f_ptr, u64 f_page_count) noexcept;
 //! \param f_page_count Number of 2MB pages to allocate
 //! \returns Pointer to allocated memory
 //!
-//! \remark If huge pages available: uses skl_huge_page_alloc (2MB-aligned, pinned)
+//! \remark If huge pages available: uses skl_huge_page_alloc (2MB-aligned, pre-populated)
 //! \remark If huge pages unavailable: uses skl_vector_alloc (cache-line aligned)
 //! \remark Allocated memory must be freed with skl_huge_page_free_or_fallback()
 [[nodiscard]] void* skl_huge_page_alloc_or_fallback(u64 f_page_count) noexcept;
