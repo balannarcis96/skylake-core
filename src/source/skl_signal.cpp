@@ -5,9 +5,9 @@
 //!
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
-#include <cstdio>
 #include <csignal>
 #include <cstdlib>
+#include <unistd.h>
 
 #include "skl_core"
 #include "skl_signal"
@@ -24,7 +24,7 @@ __sighandler_t                         g_original_SIGINT;                       
 __sighandler_t                         g_original_SIGTERM;                      //!<
 std::relaxed_value<bool>               g_program_epilog_init{false};            //!<
 std::relaxed_value<bool>               g_exit_handler_called{false};            //!<
-std::relaxed_value<bool>               g_abornal_exit_handler_called{false};    //!<
+std::relaxed_value<bool>               g_abnormal_exit_handler_called{false};    //!<
 std::relaxed_value<bool>               g_termination_req_handler_called{false}; //!<
 skl::skl_vector<skl::epilog_handler_t> g_exit_handlers{};                       //!<
 skl::skl_vector<skl::epilog_handler_t> g_abnormal_exit_handlers{};              //!<
@@ -39,7 +39,7 @@ void on_program_exit() noexcept {
     }
 
     (void)skl::skl_core_deinit_thread();
-    (void)::puts("PROGRAM EXIT!");
+    (void)::write(STDERR_FILENO, "PROGRAM EXIT!\n", 14);
 }
 void on_program_abnormal_exit(int f_signal) noexcept {
     for (auto& handler : g_abnormal_exit_handlers) {
@@ -47,7 +47,7 @@ void on_program_abnormal_exit(int f_signal) noexcept {
     }
 
     (void)skl::skl_core_deinit_thread();
-    (void)::puts("ABNORMAL PROGRAM TERMINATION!");
+    (void)::write(STDERR_FILENO, "ABNORMAL PROGRAM TERMINATION!\n", 31);
 }
 void on_program_termination_request(int f_signal) noexcept {
     for (auto& handler : g_termination_req_handlers) {
@@ -55,7 +55,26 @@ void on_program_termination_request(int f_signal) noexcept {
     }
 
     (void)skl::skl_core_deinit_thread();
-    (void)::puts("PROGRAM TERMINATION REQUESTED!");
+    (void)::write(STDERR_FILENO, "PROGRAM TERMINATION REQUESTED!\n", 32);
+}
+
+
+sigset_t _block_handled_signals() noexcept {
+    sigset_t block_set;
+    sigset_t old_set;
+    sigemptyset(&block_set);
+    sigaddset(&block_set, SIGABRT);
+    sigaddset(&block_set, SIGFPE);
+    sigaddset(&block_set, SIGILL);
+    sigaddset(&block_set, SIGSEGV);
+    sigaddset(&block_set, SIGINT);
+    sigaddset(&block_set, SIGTERM);
+    (void)sigprocmask(SIG_BLOCK, &block_set, &old_set);
+    return old_set;
+}
+
+void _restore_signals(sigset_t& f_old_set) noexcept {
+    (void)sigprocmask(SIG_SETMASK, &f_old_set, nullptr);
 }
 } // namespace
 
@@ -109,8 +128,6 @@ void _call_original_signal_handler(int f_signal) noexcept {
             }
             break;
     }
-
-    (void)skl::skl_core_deinit_thread();
 }
 
 void _exit_handler() noexcept {
@@ -122,7 +139,7 @@ void _exit_handler() noexcept {
 }
 
 void _abnormal_exit_handler(int f_signal) noexcept {
-    if (false == g_abornal_exit_handler_called.exchange(true)) {
+    if (false == g_abnormal_exit_handler_called.exchange(true)) {
         g_sig_handlers_lock.lock();
         on_program_abnormal_exit(f_signal);
         g_sig_handlers_lock.unlock();
@@ -159,9 +176,18 @@ skl_status init_program_epilog() noexcept {
     g_original_SIGILL  = ::signal(SIGILL, &_abnormal_exit_handler);  //Illegal instruction
     g_original_SIGSEGV = ::signal(SIGSEGV, &_abnormal_exit_handler); //Invalid memory reference
 
+    if (SIG_ERR == g_original_SIGABRT || SIG_ERR == g_original_SIGFPE ||
+        SIG_ERR == g_original_SIGILL || SIG_ERR == g_original_SIGSEGV) {
+        return SKL_ERR_FAIL;
+    }
+
     //Register termination request handlers
     g_original_SIGINT  = ::signal(SIGINT, &_termination_request_handler);  //Interrupt signal (CTRL + C)
     g_original_SIGTERM = ::signal(SIGTERM, &_termination_request_handler); //Termination request
+
+    if (SIG_ERR == g_original_SIGINT || SIG_ERR == g_original_SIGTERM) {
+        return SKL_ERR_FAIL;
+    }
 
     //Reserve handlers space
     g_exit_handlers.upgrade().reserve(32U);
@@ -175,9 +201,11 @@ skl_status register_epilog_handler(epilog_handler_t&& f_handler) noexcept {
         return SKL_ERR_INIT;
     }
 
+    auto old_set = _block_handled_signals();
     g_sig_handlers_lock.lock();
     g_exit_handlers.upgrade().emplace_back(std::move(f_handler));
     g_sig_handlers_lock.unlock();
+    _restore_signals(old_set);
     return SKL_SUCCESS;
 }
 skl_status register_epilog_abnormal_handler(epilog_handler_t&& f_handler) noexcept {
@@ -185,9 +213,11 @@ skl_status register_epilog_abnormal_handler(epilog_handler_t&& f_handler) noexce
         return SKL_ERR_INIT;
     }
 
+    auto old_set = _block_handled_signals();
     g_sig_handlers_lock.lock();
     g_abnormal_exit_handlers.upgrade().emplace_back(std::move(f_handler));
     g_sig_handlers_lock.unlock();
+    _restore_signals(old_set);
     return SKL_SUCCESS;
 }
 skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noexcept {
@@ -195,9 +225,17 @@ skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noe
         return SKL_ERR_INIT;
     }
 
+    auto old_set = _block_handled_signals();
     g_sig_handlers_lock.lock();
     g_termination_req_handlers.upgrade().emplace_back(std::move(f_handler));
     g_sig_handlers_lock.unlock();
+    _restore_signals(old_set);
     return SKL_SUCCESS;
+}
+bool exit_was_requested() noexcept {
+    return g_termination_req_handler_called.load_relaxed();
+}
+bool exit_happened() noexcept {
+    return g_exit_handler_called.load_relaxed() || g_abnormal_exit_handler_called.load_relaxed();
 }
 } // namespace skl

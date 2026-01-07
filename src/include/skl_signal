@@ -28,4 +28,10 @@ using epilog_handler_t = std::function<void(int)>;
 //! Register handler to be called at program exit request (CTRL+C or  SIGTERM)
 //! \remark Handler must be signal safe (no locking, no syscalls etc)
 [[nodiscard]] skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noexcept;
+
+//! Check if CTRL+C or SIGTERM was received
+[[nodiscard]] bool exit_was_requested() noexcept;
+
+//! Check if exit handlers were already called
+[[nodiscard]] bool exit_happened() noexcept;
 } // namespace skl
