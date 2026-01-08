@@ -5,6 +5,10 @@
 //!
 #include "skl_assert"
 
+namespace skl {
+[[noreturn]] void core_dump() noexcept;
+}
+
 /* Abort execution and generate a core-dump.  */
 extern "C" void abort(void) noexcept __attribute__((__noreturn__));
 extern "C" int  snprintf(char* __restrict __s, unsigned long __maxlen, const char* __restrict __format, ...) noexcept __attribute__((__format__(__printf__, 3, 4)));
@@ -26,6 +30,6 @@ SKL_NOINLINE [[noreturn]] [[gnu::cold]] void handle_assert_failure(const char* f
                    static_cast<u64>(f_line_number));
     puts(g_assert_message_buffer);
     __builtin_debugtrap();
-    abort();
+    skl::core_dump();
 }
 } // namespace skl_assert

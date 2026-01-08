@@ -29,6 +29,10 @@ using epilog_handler_t = std::function<void(int)>;
 //! \remark Handler must be signal safe (no locking, no syscalls etc)
 [[nodiscard]] skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noexcept;
 
+//! Register handler to be called to generate core dump at abnormal termination
+//! \remark Handler must be signal safe (no locking, no syscalls etc)
+[[nodiscard]] skl_status register_core_dump_handler(epilog_handler_t&& f_handler) noexcept;
+
 //! Check if CTRL+C or SIGTERM was received
 [[nodiscard]] bool exit_was_requested() noexcept;
 

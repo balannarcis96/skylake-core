@@ -24,11 +24,12 @@ __sighandler_t                         g_original_SIGINT;                       
 __sighandler_t                         g_original_SIGTERM;                      //!<
 std::relaxed_value<bool>               g_program_epilog_init{false};            //!<
 std::relaxed_value<bool>               g_exit_handler_called{false};            //!<
-std::relaxed_value<bool>               g_abnormal_exit_handler_called{false};    //!<
+std::relaxed_value<bool>               g_abnormal_exit_handler_called{false};   //!<
 std::relaxed_value<bool>               g_termination_req_handler_called{false}; //!<
 skl::skl_vector<skl::epilog_handler_t> g_exit_handlers{};                       //!<
 skl::skl_vector<skl::epilog_handler_t> g_abnormal_exit_handlers{};              //!<
 skl::skl_vector<skl::epilog_handler_t> g_termination_req_handlers{};            //!<
+skl::skl_vector<skl::epilog_handler_t> g_core_dump_handlers{};                  //!<
 skl::spin_lock_t                       g_sig_handlers_lock{};                   //!<
 } // namespace
 
@@ -57,7 +58,6 @@ void on_program_termination_request(int f_signal) noexcept {
     (void)skl::skl_core_deinit_thread();
     (void)::write(STDERR_FILENO, "PROGRAM TERMINATION REQUESTED!\n", 32);
 }
-
 
 sigset_t _block_handled_signals() noexcept {
     sigset_t block_set;
@@ -155,8 +155,7 @@ skl_status init_program_epilog() noexcept {
     g_original_SIGILL  = ::signal(SIGILL, &_abnormal_exit_handler);  //Illegal instruction
     g_original_SIGSEGV = ::signal(SIGSEGV, &_abnormal_exit_handler); //Invalid memory reference
 
-    if (SIG_ERR == g_original_SIGABRT || SIG_ERR == g_original_SIGFPE ||
-        SIG_ERR == g_original_SIGILL || SIG_ERR == g_original_SIGSEGV) {
+    if (SIG_ERR == g_original_SIGABRT || SIG_ERR == g_original_SIGFPE || SIG_ERR == g_original_SIGILL || SIG_ERR == g_original_SIGSEGV) {
         return SKL_ERR_FAIL;
     }
 
@@ -211,10 +210,31 @@ skl_status register_epilog_termination_handler(epilog_handler_t&& f_handler) noe
     _restore_signals(old_set);
     return SKL_SUCCESS;
 }
+skl_status register_core_dump_handler(epilog_handler_t&& f_handler) noexcept {
+    if (false == g_program_epilog_init) {
+        return SKL_ERR_INIT;
+    }
+
+    auto old_set = _block_handled_signals();
+    g_sig_handlers_lock.lock();
+    g_core_dump_handlers.upgrade().emplace_back(std::move(f_handler));
+    g_sig_handlers_lock.unlock();
+    _restore_signals(old_set);
+    return SKL_SUCCESS;
+}
 bool exit_was_requested() noexcept {
     return g_termination_req_handler_called.load_relaxed();
 }
 bool exit_happened() noexcept {
     return g_exit_handler_called.load_relaxed() || g_abnormal_exit_handler_called.load_relaxed();
+}
+
+void core_dump() noexcept {
+    for (auto& handler : g_core_dump_handlers) {
+        handler(0);
+    }
+
+    // Generate core dump
+    std::abort();
 }
 } // namespace skl

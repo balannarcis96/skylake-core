@@ -15,6 +15,7 @@
 #include "skl_thread"
 #include "skl_huge_pages"
 #include "skl_pool/hugepage_buffer_pool"
+#include "skl_pool/buffer_pool"
 
 namespace {
 //Is the skl core initialized on the current thread
@@ -47,9 +48,17 @@ skl_status skl_core_init() noexcept {
         puts("SKL_CORE: Huge pages not available");
     }
 
-    const auto result = HugePageBufferPool::construct_pool();
+    auto result = HugePageBufferPool::construct_pool();
     if (result.is_success()) {
         puts("SKL_CORE: Hugepage buffer pool initialized");
+    } else {
+        std::print("SKL_CORE: Hugepage buffer failed to initialize! Error: {} | {} \n", result.raw(), result.to_string());
+        return SKL_ERR_FAIL;
+    }
+
+    result = BufferPool::construct_pool();
+    if (result.is_success()) {
+        puts("SKL_CORE: Buffer pool initialized");
     } else {
         std::print("SKL_CORE: Hugepage buffer failed to initialize! Error: {} | {} \n", result.raw(), result.to_string());
         return SKL_ERR_FAIL;
@@ -73,7 +82,7 @@ skl_status skl_core_init() noexcept {
     return SKL_SUCCESS;
 }
 
-bool skl_core_is_initialized() noexcept{
+bool skl_core_is_initialized() noexcept {
     return g_is_skl_core_init.load_relaxed();
 }
 
@@ -124,6 +133,7 @@ skl_status skl_core_deinit() noexcept {
     }
 
     HugePageBufferPool::destroy_pool();
+    BufferPool::destroy_pool();
 
     puts("SKL_CORE_DEINIT!");
     return SKL_SUCCESS;
