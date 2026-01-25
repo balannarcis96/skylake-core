@@ -32,15 +32,19 @@ u64 read_system_huge_page_size() noexcept {
 
     char line[256];
     u64  hugepage_size_kb = 0u;
+    u64  hugepage_total   = 0u;
 
     while (::fgets(line, sizeof(line), file) != nullptr) {
         // Look for "Hugepagesize:" line (e.g., "Hugepagesize:       2048 kB")
-        if (::sscanf(line, "Hugepagesize: %lu kB", &hugepage_size_kb) == 1) {
-            break;
-        }
+        (void)sscanf(line, "Hugepagesize: %lu kB", &hugepage_size_kb);
+        (void)sscanf(line, "HugePages_Total: %lu", &hugepage_total);
     }
 
     ::fclose(file);
+
+    if (0u == hugepage_total) {
+        return 0u;
+    }
 
     // Convert from kB to bytes
     return hugepage_size_kb * 1024u;
