@@ -7,9 +7,9 @@
 
 /* 
  *  IMPORTANT:
- *     If anyone has any idea on how to not rely on <new>, PLEASE CONTACT ME: balannarcis096@gmail.com
+ *     If anyone has any idea on how to not rely on <new>, PLEASE CONTACT ME!
  * 
- * Given that we have fixed the os, compiler and arch, we are paying to much to get just [new (a) Asd()]!!!
+ * Given that we have fixed the os, compiler and arch, we are paying to much to get just [new (foo) Foo()]!!!
  */
 
 #include <new>

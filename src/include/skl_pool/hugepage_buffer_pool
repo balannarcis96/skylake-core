@@ -5,6 +5,7 @@
 #include "skl_assert"
 #include "skl_result"
 #include "skl_traits/forward"
+#include "skl_traits/integral_constant"
 #include "skl_buffer_view"
 
 namespace skl {
@@ -279,7 +280,7 @@ public:
     using const_pointer                          = const _T*;
     using reference                              = _T&;
     using const_reference                        = const _T&;
-    using propagate_on_container_move_assignment = std::true_type;
+    using propagate_on_container_move_assignment = true_type;
 
     template <typename _U>
     struct rebind {
