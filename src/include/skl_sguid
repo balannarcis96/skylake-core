@@ -16,9 +16,12 @@ constexpr byte CSGUIDSize = 4u;
 //! Raw small guid byte array
 using SGUID_raw_t = byte[CSGUIDSize];
 
+//! Raw small guid u32 type
+using SGUID_u32_t = u32;
+
 //! Simple, 4 random bytes small-guid
 //! \remark Default constructs to the null-guid (4 zero bytes)
-struct SGUID {
+struct alignas(4u) SGUID {
     static constexpr byte CSize = CSGUIDSize;
 
     //! Default construct as null-guid
@@ -51,19 +54,31 @@ struct SGUID {
     constexpr ~SGUID() noexcept             = default;
 
     [[nodiscard]] constexpr u32 raw() const noexcept {
-        return *reinterpret_cast<const u32*>(m_data);
+        return __builtin_bit_cast(u32, m_data);
     }
 
     [[nodiscard]] constexpr bool operator==(const SGUID& f_other) const noexcept {
-        return raw() == f_other.raw();
+        return (u8(f_other.m_data[0u] == m_data[0u])
+                & u8(f_other.m_data[1u] == m_data[1u])
+                & u8(f_other.m_data[2u] == m_data[2u])
+                & u8(f_other.m_data[3u] == m_data[3u]))
+            != 0u;
     }
 
     [[nodiscard]] constexpr bool operator!=(const SGUID& f_other) const noexcept {
-        return raw() != f_other.raw();
+        return (u8(f_other.m_data[0u] == m_data[0u])
+                & u8(f_other.m_data[1u] == m_data[1u])
+                & u8(f_other.m_data[2u] == m_data[2u])
+                & u8(f_other.m_data[3u] == m_data[3u]))
+            == 0u;
     }
 
     [[nodiscard]] constexpr bool is_null() const noexcept {
-        return *reinterpret_cast<const u32*>(m_data) == u32(0U);
+        return (u8(m_data[0u] == 0u)
+                & u8(m_data[1u] == 0u)
+                & u8(m_data[2u] == 0u)
+                & u8(m_data[3u] == 0u))
+            != 0u;
     }
 
     void to_string(skl_buffer_view f_target_buffer) const noexcept;

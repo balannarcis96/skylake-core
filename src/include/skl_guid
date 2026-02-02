@@ -15,69 +15,76 @@ constexpr byte CGUIDSize = 16u;
 //! Raw guid byte array
 using GUID_raw_t = byte[CGUIDSize];
 
+//! Raw guid byte array
+using GUID_u64_t = u64[2u];
+
 //! Simple, 16 random bytes guid
 //! \remark Default constructs to the null-guid (16 zero bytes)
-struct GUID {
+struct alignas(8u) GUID {
     static constexpr byte CSize = CGUIDSize;
 
     //Default construct as null-guid
-    constexpr GUID() noexcept
-        : m_data{0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U} {
+    constexpr GUID() noexcept = default;
+
+    //! Construct from low and high u64 parts
+    constexpr GUID(u64 f_low, u64 f_high) noexcept
+        : m_low{f_low}
+        , m_high{f_high} {
     }
 
     //! Construct from raw byte array
-    constexpr GUID(GUID_raw_t f_raw) noexcept
-        : m_data{f_raw[0U],
-                 f_raw[1U],
-                 f_raw[2U],
-                 f_raw[3U],
-                 f_raw[4U],
-                 f_raw[5U],
-                 f_raw[6U],
-                 f_raw[7U],
-                 f_raw[8U],
-                 f_raw[9U],
-                 f_raw[10U],
-                 f_raw[11U],
-                 f_raw[12U],
-                 f_raw[13U],
-                 f_raw[14U],
-                 f_raw[15U]} {
+    constexpr GUID(const GUID_raw_t f_raw) noexcept
+        : m_low{static_cast<u64>(f_raw[0])
+                | static_cast<u64>(f_raw[1]) << 8u
+                | static_cast<u64>(f_raw[2]) << 16u
+                | static_cast<u64>(f_raw[3]) << 24u
+                | static_cast<u64>(f_raw[4]) << 32u
+                | static_cast<u64>(f_raw[5]) << 40u
+                | static_cast<u64>(f_raw[6]) << 48u
+                | static_cast<u64>(f_raw[7]) << 56u}
+        , m_high{static_cast<u64>(f_raw[8])
+                 | static_cast<u64>(f_raw[9]) << 8u
+                 | static_cast<u64>(f_raw[10]) << 16u
+                 | static_cast<u64>(f_raw[11]) << 24u
+                 | static_cast<u64>(f_raw[12]) << 32u
+                 | static_cast<u64>(f_raw[13]) << 40u
+                 | static_cast<u64>(f_raw[14]) << 48u
+                 | static_cast<u64>(f_raw[15]) << 56u} {
     }
 
     //! Construct with specific bytes
-    constexpr GUID(byte f_byte_1,
-                   byte f_byte_2,
-                   byte f_byte_3,
-                   byte f_byte_4,
-                   byte f_byte_5,
-                   byte f_byte_6,
-                   byte f_byte_7,
-                   byte f_byte_8,
-                   byte f_byte_9,
-                   byte f_byte_10,
-                   byte f_byte_11,
-                   byte f_byte_12,
-                   byte f_byte_13,
-                   byte f_byte_14,
-                   byte f_byte_15,
-                   byte f_byte_16) noexcept
-        : m_data{f_byte_1,
-                 f_byte_2,
-                 f_byte_3,
-                 f_byte_4,
-                 f_byte_5,
-                 f_byte_6,
-                 f_byte_7,
-                 f_byte_8,
-                 f_byte_9,
-                 f_byte_10,
-                 f_byte_11,
-                 f_byte_12,
-                 f_byte_13,
-                 f_byte_14,
-                 f_byte_15,
-                 f_byte_16} {
+    constexpr GUID(byte f_b0,
+                   byte f_b1,
+                   byte f_b2,
+                   byte f_b3,
+                   byte f_b4,
+                   byte f_b5,
+                   byte f_b6,
+                   byte f_b7,
+                   byte f_b8,
+                   byte f_b9,
+                   byte f_b10,
+                   byte f_b11,
+                   byte f_b12,
+                   byte f_b13,
+                   byte f_b14,
+                   byte f_b15) noexcept
+        : m_low{static_cast<u64>(f_b0)
+                | static_cast<u64>(f_b1) << 8u
+                | static_cast<u64>(f_b2) << 16u
+                | static_cast<u64>(f_b3) << 24u
+                | static_cast<u64>(f_b4) << 32u
+                | static_cast<u64>(f_b5) << 40u
+                | static_cast<u64>(f_b6) << 48u
+                | static_cast<u64>(f_b7) << 56u}
+        , m_high{static_cast<u64>(f_b8)
+                 | static_cast<u64>(f_b9) << 8u
+                 | static_cast<u64>(f_b10) << 16u
+                 | static_cast<u64>(f_b11) << 24u
+                 | static_cast<u64>(f_b12) << 32u
+                 | static_cast<u64>(f_b13) << 40u
+                 | static_cast<u64>(f_b14) << 48u
+                 | static_cast<u64>(f_b15) << 56u} {
     }
 
     constexpr GUID(const GUID&) noexcept            = default;
@@ -87,30 +94,22 @@ struct GUID {
     constexpr ~GUID() noexcept                      = default;
 
     [[nodiscard]] constexpr pair<u64, u64> raw() const noexcept {
-        return {
-            .first  = *reinterpret_cast<const u64*>(m_data),
-            .second = *reinterpret_cast<const u64*>(m_data + 8U)};
+        return {m_low, m_high};
     }
 
     [[nodiscard]] constexpr bool operator==(const GUID& f_other) const noexcept {
-        return (*reinterpret_cast<const u64*>(m_data) == *reinterpret_cast<const u64*>(f_other.m_data))
-            && (*reinterpret_cast<const u64*>(m_data + 8U) == *reinterpret_cast<const u64*>(f_other.m_data + 8U));
-    }
-
-    [[nodiscard]] constexpr bool operator!=(const GUID& f_other) const noexcept {
-        return (*reinterpret_cast<const u64*>(m_data) != *reinterpret_cast<const u64*>(f_other.m_data))
-            || (*reinterpret_cast<const u64*>(m_data + 8U) != *reinterpret_cast<const u64*>(f_other.m_data + 8U));
+        return m_low == f_other.m_low && m_high == f_other.m_high;
     }
 
     [[nodiscard]] constexpr bool is_null() const noexcept {
-        return (*reinterpret_cast<const u64*>(m_data) == u64(0U))
-            && (*reinterpret_cast<const u64*>(m_data + 8U) == u64(0U));
+        return (m_low | m_high) == 0u;
     }
 
     void to_string(skl_buffer_view f_target_buffer) const noexcept;
 
 private:
-    GUID_raw_t m_data;
+    u64 m_low{0u};
+    u64 m_high{0u};
 };
 
 //! [LibInit][ThreadLocal] Make new guid
@@ -131,29 +130,16 @@ private:
 } // namespace skl
 
 namespace skl {
-constexpr GUID GUID_Zero{}; //!< Null GUID
-constexpr GUID GUID_Max{
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu),
-    u8(0xffu)}; //!< Max GUID
+//! Null GUID
+constexpr GUID GUID_Zero{};
+
+//! Max GUID
+constexpr GUID GUID_Max{0xffffffffffffffffull, 0xffffffffffffffffull};
 
 struct guid_hash {
     [[nodiscard]] static u64 operator()(const skl::GUID& f_guid) noexcept {
-        const auto raw = f_guid.raw();
-        return static_cast<u64>(raw.first ^ raw.second); // Simple XOR of the two u64 parts
+        const auto [lo, hi] = f_guid.raw();
+        return lo ^ hi;
     }
 };
 } // namespace skl

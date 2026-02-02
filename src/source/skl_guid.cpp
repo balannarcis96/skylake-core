@@ -19,19 +19,14 @@ GUID make_guid() noexcept {
     }
     return {rand_bytes};
 }
+
 GUID make_guid_fast() noexcept {
-    SklRand& rand{get_thread_rand()};
-    byte     rand_bytes[GUID::CSize];
-
-    *reinterpret_cast<u32*>(rand_bytes)       = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 4U)  = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 8U)  = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 12U) = rand.next();
-
-    static_assert((sizeof(u32) * 4U) == GUID::CSize);
-
-    return {rand_bytes};
+    SklRand&  rand{get_thread_rand()};
+    const u64 lo = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 hi = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    return {lo, hi};
 }
+
 GUID g_make_guid() noexcept {
     SklRand rand{};
     byte    rand_bytes[GUID::CSize];
@@ -40,18 +35,12 @@ GUID g_make_guid() noexcept {
     }
     return {rand_bytes};
 }
+
 GUID g_make_guid_fast() noexcept {
-    SklRand rand{};
-    byte    rand_bytes[GUID::CSize];
-
-    *reinterpret_cast<u32*>(rand_bytes)       = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 4U)  = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 8U)  = rand.next();
-    *reinterpret_cast<u32*>(rand_bytes + 12U) = rand.next();
-
-    static_assert((sizeof(u32) * 4U) == GUID::CSize);
-
-    return {rand_bytes};
+    SklRand   rand{};
+    const u64 lo = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 hi = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    return {lo, hi};
 }
 
 SGUID make_sguid() noexcept {
@@ -62,16 +51,12 @@ SGUID make_sguid() noexcept {
     }
     return {rand_bytes};
 }
+
 SGUID make_sguid_fast() noexcept {
     SklRand& rand{get_thread_rand()};
-    byte     rand_bytes[SGUID::CSize];
-
-    *reinterpret_cast<u32*>(rand_bytes) = rand.next();
-
-    static_assert(sizeof(u32) == SGUID::CSize);
-
-    return {rand_bytes};
+    return {rand.next()};
 }
+
 SGUID g_make_sguid() noexcept {
     SklRand rand{};
     byte    rand_bytes[SGUID::CSize];
@@ -80,15 +65,10 @@ SGUID g_make_sguid() noexcept {
     }
     return {rand_bytes};
 }
+
 SGUID g_make_sguid_fast() noexcept {
     SklRand rand{};
-    byte    rand_bytes[SGUID::CSize];
-
-    *reinterpret_cast<u32*>(rand_bytes) = rand.next();
-
-    static_assert(sizeof(u32) == SGUID::CSize);
-
-    return {rand_bytes};
+    return {rand.next()};
 }
 
 void GUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
@@ -102,22 +82,22 @@ void GUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
     (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
                    f_target_buffer.length,
                    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-                   m_data[0U],
-                   m_data[1U],
-                   m_data[2U],
-                   m_data[3U],
-                   m_data[4U],
-                   m_data[5U],
-                   m_data[6U],
-                   m_data[7U],
-                   m_data[8U],
-                   m_data[9U],
-                   m_data[10U],
-                   m_data[11U],
-                   m_data[12U],
-                   m_data[13U],
-                   m_data[14U],
-                   m_data[15U]);
+                   static_cast<unsigned>(m_low & 0xffu),
+                   static_cast<unsigned>((m_low >> 8u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 16u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 24u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 32u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 40u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 48u) & 0xffu),
+                   static_cast<unsigned>((m_low >> 56u) & 0xffu),
+                   static_cast<unsigned>(m_high & 0xffu),
+                   static_cast<unsigned>((m_high >> 8u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 16u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 24u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 32u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 40u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 48u) & 0xffu),
+                   static_cast<unsigned>((m_high >> 56u) & 0xffu));
 }
 
 void SGUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
@@ -130,9 +110,9 @@ void SGUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
     (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
                    f_target_buffer.length,
                    "%02x%02x%02x%02x",
-                   m_data[0U],
-                   m_data[1U],
-                   m_data[2U],
-                   m_data[3U]);
+                   static_cast<unsigned>((*this)[0]),
+                   static_cast<unsigned>((*this)[1]),
+                   static_cast<unsigned>((*this)[2]),
+                   static_cast<unsigned>((*this)[3]));
 }
 } // namespace skl
