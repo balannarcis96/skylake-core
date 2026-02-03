@@ -24,7 +24,7 @@ struct buffer_header_t {
 static_assert(sizeof(buffer_header_t) == 8, "Header must be 8 bytes for alignment");
 
 //! Magic number for debug validation
-constexpr u32 CBufferMagic = 0xB0FFE42A;
+[[maybe_unused]] constexpr u32 CBufferMagic = 0xB0FFE42A;
 } // namespace
 
 namespace {

@@ -53,9 +53,11 @@ function(skl_CreateSkylakeCoreLibTarget
     # DISABLE_LTO  [Optional] Do not not LTO (link time optimization) in shipping builds (default=OFF)
     # FORCE_HUGEPAGE_SUPPORT [Optional] Force huge page support (default=OFF)
     # NO_MIMALLOC [Optional] Disable mimalloc (default=OFF)
+    # OVERRIDE_LOG_MASK [Optional] Override the log level mask (hex value like 0x3F)
 
     set(_OPTIONS ENABLE_RTTI DISABLE_LTO FORCE_HUGEPAGE_SUPPORT NO_MIMALLOC)
-    cmake_parse_arguments(SKL "${_OPTIONS}" "" "" ${ARGN})
+    set(_SINGLE_VALUE_ARGS OVERRIDE_LOG_MASK)
+    cmake_parse_arguments(SKL "${_OPTIONS}" "${_SINGLE_VALUE_ARGS}" "" ${ARGN})
 
     # Add the static lib target
     add_library(${TARGET_NAME} STATIC
@@ -117,10 +119,25 @@ function(skl_CreateSkylakeCoreLibTarget
         target_compile_definitions(${TARGET_NAME} PUBLIC SKL_NO_EXCEPTIONS=1)
     endif()
 
-    if("${SKL_BUILD_TYPE}" STREQUAL "DEV")
-        target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_BUILD_DEV=1")
+    # Determine log level mask (allow override)
+    if(SKL_OVERRIDE_LOG_MASK)
+        set(_LOG_LEVEL_MASK "${SKL_OVERRIDE_LOG_MASK}")
+    elseif("${SKL_BUILD_TYPE}" STREQUAL "DEV")
+        set(_LOG_LEVEL_MASK "${SKL_LOG_LEVEL_DEV}")
     elseif("${SKL_BUILD_TYPE}" STREQUAL "STAGING")
-        target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_BUILD_STAGING=1")
+        set(_LOG_LEVEL_MASK "${SKL_LOG_LEVEL_STAGING}")
+    elseif("${SKL_BUILD_TYPE}" STREQUAL "SHIPPING")
+        set(_LOG_LEVEL_MASK "${SKL_LOG_LEVEL_SHIPPING}")
+    endif()
+
+    if("${SKL_BUILD_TYPE}" STREQUAL "DEV")
+        target_compile_definitions(${TARGET_NAME} PUBLIC
+            "SKL_BUILD_DEV=1"
+            "SKL_LOG_LEVEL_MASK=${_LOG_LEVEL_MASK}")
+    elseif("${SKL_BUILD_TYPE}" STREQUAL "STAGING")
+        target_compile_definitions(${TARGET_NAME} PUBLIC
+            "SKL_BUILD_STAGING=1"
+            "SKL_LOG_LEVEL_MASK=${_LOG_LEVEL_MASK}")
     elseif("${SKL_BUILD_TYPE}" STREQUAL "SHIPPING")
         target_compile_options(${TARGET_NAME} PUBLIC
             -finline-functions # Aggressive inlining
@@ -136,7 +153,9 @@ function(skl_CreateSkylakeCoreLibTarget
         target_link_options(${TARGET_NAME} PUBLIC
             -Wl,--gc-sections # Strip dead code produced by the 2-section split
         )
-        target_compile_definitions(${TARGET_NAME} PUBLIC "SKL_BUILD_SHIPPING=1")
+        target_compile_definitions(${TARGET_NAME} PUBLIC
+            "SKL_BUILD_SHIPPING=1"
+            "SKL_LOG_LEVEL_MASK=${_LOG_LEVEL_MASK}")
 
         if(NOT SKL_ENABLE_RTTI)
             target_compile_options(${TARGET_NAME} PUBLIC -fno-rtti) # Disable RTTI
@@ -190,6 +209,13 @@ function(skl_CreateSkylakeCoreLibTarget
         # Enable unity build
         set_target_properties(${TARGET_NAME} PROPERTIES UNITY_BUILD ON)
         set_target_properties(${TARGET_NAME} PROPERTIES UNITY_BUILD_BATCH_SIZE 24)
+
+        # Exclude buffer pool files from unity builds to avoid symbol conflicts
+        set_source_files_properties(
+            "${SKL_CORE_LIB_SRC_ROOT}/source/buffer_pool.cpp"
+            "${SKL_CORE_LIB_SRC_ROOT}/source/hugepage_buffer_pool.cpp"
+            PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+        )
     endif()
 endfunction()
 

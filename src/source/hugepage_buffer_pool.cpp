@@ -26,7 +26,7 @@ struct buffer_header_t {
 static_assert(sizeof(buffer_header_t) == 8, "Header must be 8 bytes for alignment");
 
 //! Magic number for debug validation
-constexpr u32 CBufferMagic = 0xB0FFE42D;
+[[maybe_unused]] constexpr u32 CBufferMagic = 0xB0FFE42D;
 
 //! Tracking entry for allocated huge pages
 struct hugepage_ptr_t {
@@ -47,11 +47,11 @@ static_assert(sizeof(metadata_t) <= skl::huge_pages::CHugePageSize, "Metadata si
 } // namespace
 
 namespace {
-constexpr u8  CMinBucketIndex = 5u;                    //!< Minimum bucket index (5 for 32-byte buffers)
-constexpr u8  CMaxBucketIndex = 27u;                   //!< Maximum bucket index (27 for 128MB buffers)
-constexpr u8  CMaxBuckets     = CMaxBucketIndex + 1u;  //!< Total bucket indices
-constexpr u64 CMaxBufferSize  = 1u << CMaxBucketIndex; //!< Maximum buffer size (128MB)
-constexpr u32 CHeaderSize     = sizeof(buffer_header_t); //!< Size of buffer header (8 bytes)
+constexpr u8                  CMinBucketIndex = 5u;                      //!< Minimum bucket index (5 for 32-byte buffers)
+constexpr u8                  CMaxBucketIndex = 27u;                     //!< Maximum bucket index (27 for 128MB buffers)
+[[maybe_unused]] constexpr u8 CMaxBuckets     = CMaxBucketIndex + 1u;    //!< Total bucket indices
+constexpr u64                 CMaxBufferSize  = 1u << CMaxBucketIndex;   //!< Maximum buffer size (128MB)
+constexpr u32                 CHeaderSize     = sizeof(buffer_header_t); //!< Size of buffer header (8 bytes)
 
 static_assert(sizeof(free_node_t) <= (1u << CMinBucketIndex), "Free node must fit in minimum buffer size");
 
@@ -108,8 +108,8 @@ template <u32 BucketIndex>
         g_metadata->allpages.upgrade().push_back({buffer, CPageCount});
 
         // Add single buffer to freelist
-        auto* node = reinterpret_cast<free_node_t*>(buffer);
-        node->next = g_metadata->bucket_heads[BucketIndex];
+        auto* node                            = reinterpret_cast<free_node_t*>(buffer);
+        node->next                            = g_metadata->bucket_heads[BucketIndex];
         g_metadata->bucket_heads[BucketIndex] = node;
     }
 }
@@ -302,14 +302,14 @@ HugePageBufferPool::buffer_t HugePageBufferPool::buffer_alloc(u32 f_size) noexce
     }
 
     // Write header at start of buffer
-    auto* header             = reinterpret_cast<buffer_header_t*>(ptr);
-    header->allocated_size   = actual_size;
+    auto* header           = reinterpret_cast<buffer_header_t*>(ptr);
+    header->allocated_size = actual_size;
 #if !SKL_BUILD_SHIPPING
-    header->magic            = CBufferMagic;
+    header->magic = CBufferMagic;
 #endif
 
     // Rebase pointer past header for user
-    byte* user_ptr       = reinterpret_cast<byte*>(ptr) + CHeaderSize;
+    byte*     user_ptr    = reinterpret_cast<byte*>(ptr) + CHeaderSize;
     const u32 usable_size = actual_size - CHeaderSize;
 
 #if !SKL_BUILD_SHIPPING

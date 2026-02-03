@@ -27,6 +27,17 @@ SKL_CACHE_ALIGNED std::relaxed_value<skl::SLoggerSink*> g_skl_logger_sinks[i32(s
 //! Has performed default init
 std::relaxed_value<bool> g_skl_current_log_init_default = false;
 
+//! Global log level mask (0 = all logging disabled, per-bit enables log levels)
+#if defined(SKL_LOG_LEVEL_MASK)
+SKL_CACHE_ALIGNED std::relaxed_value<u32> g_skl_log_level_mask = u32(SKL_LOG_LEVEL_MASK);
+#elif defined(SKL_BUILD_SHIPPING)
+SKL_CACHE_ALIGNED std::relaxed_value<u32> g_skl_log_level_mask = skl::CSLoggerLevelShipping;
+#elif defined(SKL_BUILD_STAGING)
+SKL_CACHE_ALIGNED std::relaxed_value<u32> g_skl_log_level_mask = skl::CSLoggerLevelStaging;
+#else
+SKL_CACHE_ALIGNED std::relaxed_value<u32> g_skl_log_level_mask = skl::CSLoggerLevelDev;
+#endif
+
 struct slogger_sink_tls {
     slogger_sink_tls() noexcept {
         m_buffer[skl::array_size(m_buffer) - 1U] = 0;
@@ -65,6 +76,14 @@ namespace skl {
 void slogger_register_sink(SLoggerSink* f_sink) noexcept {
     SKL_ASSERT_PERMANENT(nullptr != f_sink);
     g_skl_logger_sinks[f_sink->id()].store_release(f_sink);
+}
+
+u32 skl_get_log_level_mask() noexcept {
+    return g_skl_log_level_mask.load_acquire();
+}
+
+void skl_set_log_level_mask(u32 f_mask) noexcept {
+    g_skl_log_level_mask.store_release(f_mask);
 }
 
 skl_status SLoggerSinkManager::init_thread() noexcept {

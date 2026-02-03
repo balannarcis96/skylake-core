@@ -14,38 +14,287 @@
 #define SKL_LOG_CONCATENATE_DETAIL(x, y) x##y
 #define SKL_LOG_CONCATENATE(x, y)        SKL_LOG_CONCATENATE_DETAIL(x, y)
 
+// Preprocessor bit masks for compile-time checks
+#define SKL_LOG_BIT_FATAL   0x1  // 1 << 0
+#define SKL_LOG_BIT_ERROR   0x2  // 1 << 1
+#define SKL_LOG_BIT_WARNING 0x4  // 1 << 2
+#define SKL_LOG_BIT_INFO    0x8  // 1 << 3
+#define SKL_LOG_BIT_DEBUG   0x10 // 1 << 4
+#define SKL_LOG_BIT_TRACE   0x20 // 1 << 5
+
+// Default to all levels if not defined
+#ifndef SKL_LOG_LEVEL_MASK
+#    define SKL_LOG_LEVEL_MASK 0x3F
+#endif
+
 // Log into the current set sink (eg. stdout, file, net)
 // Use this where logging into the net sink makes sens
-#define SDEBUG(format, ...)   ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SINFO(format, ...)    ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SWARNING(format, ...) ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SERROR(format, ...)   ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SFATAL(format, ...)   ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_DEBUG)
+#    define SDEBUG(format, ...)                                                                                                           \
+        do {                                                                                                                              \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelDebug) {                                                            \
+                ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                             \
+        } while (0)
+#else
+#    define SDEBUG(format, ...) \
+        do {                    \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_INFO)
+#    define SINFO(format, ...)                                                                                                           \
+        do {                                                                                                                             \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelInfo) {                                                            \
+                ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                            \
+        } while (0)
+#else
+#    define SINFO(format, ...) \
+        do {                   \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_WARNING)
+#    define SWARNING(format, ...)                                                                                                           \
+        do {                                                                                                                                \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelWarning) {                                                            \
+                ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                               \
+        } while (0)
+#else
+#    define SWARNING(format, ...) \
+        do {                      \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_ERROR)
+#    define SERROR(format, ...)                                                                                                           \
+        do {                                                                                                                              \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelError) {                                                            \
+                ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                             \
+        } while (0)
+#else
+#    define SERROR(format, ...) \
+        do {                    \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_FATAL)
+#    define SFATAL(format, ...)                                                                                                           \
+        do {                                                                                                                              \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelFatal) {                                                            \
+                ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                             \
+        } while (0)
+#else
+#    define SFATAL(format, ...) \
+        do {                    \
+        } while (0)
+#endif
 
 // Log into the current set sink (eg. stdout, file, net)
 // Use this where logging into the net sink makes sens (Tagged)
-#define SDEBUG_T(format, ...)   ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SINFO_T(format, ...)    ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SWARNING_T(format, ...) ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SERROR_T(format, ...)   ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SFATAL_T(format, ...)   ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_DEBUG)
+#    define SDEBUG_T(format, ...)                                                                                                                     \
+        do {                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelDebug) {                                                                        \
+                ::skl::skl_log<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                         \
+        } while (0)
+#else
+#    define SDEBUG_T(format, ...) \
+        do {                      \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_INFO)
+#    define SINFO_T(format, ...)                                                                                                                     \
+        do {                                                                                                                                         \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelInfo) {                                                                        \
+                ::skl::skl_log<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                        \
+        } while (0)
+#else
+#    define SINFO_T(format, ...) \
+        do {                     \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_WARNING)
+#    define SWARNING_T(format, ...)                                                                                                                     \
+        do {                                                                                                                                            \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelWarning) {                                                                        \
+                ::skl::skl_log<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                           \
+        } while (0)
+#else
+#    define SWARNING_T(format, ...) \
+        do {                        \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_ERROR)
+#    define SERROR_T(format, ...)                                                                                                                     \
+        do {                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelError) {                                                                        \
+                ::skl::skl_log<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                         \
+        } while (0)
+#else
+#    define SERROR_T(format, ...) \
+        do {                      \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_FATAL)
+#    define SFATAL_T(format, ...)                                                                                                                     \
+        do {                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelFatal) {                                                                        \
+                ::skl::skl_log<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                         \
+        } while (0)
+#else
+#    define SFATAL_T(format, ...) \
+        do {                      \
+        } while (0)
+#endif
 
 // Sink all local logs into stdout
 constexpr skl::slogger_sink_id_t CSLoggerLocalSink = ::skl::CSLoggerFileHandleSinkId;
 
 // Log into the local sink (eg. stdout, file etc)
-#define SDEBUG_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SINFO_LOCAL(format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SWARNING_LOCAL(format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SERROR_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SFATAL_LOCAL(format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_DEBUG)
+#    define SDEBUG_LOCAL(format, ...)                                                                                                                                 \
+        do {                                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelDebug) {                                                                                        \
+                ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                                         \
+        } while (0)
+#else
+#    define SDEBUG_LOCAL(format, ...) \
+        do {                          \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_INFO)
+#    define SINFO_LOCAL(format, ...)                                                                                                                                 \
+        do {                                                                                                                                                         \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelInfo) {                                                                                        \
+                ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                                        \
+        } while (0)
+#else
+#    define SINFO_LOCAL(format, ...) \
+        do {                         \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_WARNING)
+#    define SWARNING_LOCAL(format, ...)                                                                                                                                 \
+        do {                                                                                                                                                            \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelWarning) {                                                                                        \
+                ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                                           \
+        } while (0)
+#else
+#    define SWARNING_LOCAL(format, ...) \
+        do {                            \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_ERROR)
+#    define SERROR_LOCAL(format, ...)                                                                                                                                 \
+        do {                                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelError) {                                                                                        \
+                ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                                         \
+        } while (0)
+#else
+#    define SERROR_LOCAL(format, ...) \
+        do {                          \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_FATAL)
+#    define SFATAL_LOCAL(format, ...)                                                                                                                                 \
+        do {                                                                                                                                                          \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelFatal) {                                                                                        \
+                ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                                         \
+        } while (0)
+#else
+#    define SFATAL_LOCAL(format, ...) \
+        do {                          \
+        } while (0)
+#endif
 
 // Log into the local sink (eg. stdout, file etc) (Tagged)
-#define SDEBUG_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SINFO_LOCAL_T(format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SWARNING_LOCAL_T(format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SERROR_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
-#define SFATAL_LOCAL_T(format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__)
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_DEBUG)
+#    define SDEBUG_LOCAL_T(format, ...)                                                                                                                                           \
+        do {                                                                                                                                                                      \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelDebug) {                                                                                                    \
+                ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                                                     \
+        } while (0)
+#else
+#    define SDEBUG_LOCAL_T(format, ...) \
+        do {                            \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_INFO)
+#    define SINFO_LOCAL_T(format, ...)                                                                                                                                           \
+        do {                                                                                                                                                                     \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelInfo) {                                                                                                    \
+                ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                                                    \
+        } while (0)
+#else
+#    define SINFO_LOCAL_T(format, ...) \
+        do {                           \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_WARNING)
+#    define SWARNING_LOCAL_T(format, ...)                                                                                                                                           \
+        do {                                                                                                                                                                        \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelWarning) {                                                                                                    \
+                ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                                                       \
+        } while (0)
+#else
+#    define SWARNING_LOCAL_T(format, ...) \
+        do {                              \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_ERROR)
+#    define SERROR_LOCAL_T(format, ...)                                                                                                                                           \
+        do {                                                                                                                                                                      \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelError) {                                                                                                    \
+                ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                                                     \
+        } while (0)
+#else
+#    define SERROR_LOCAL_T(format, ...) \
+        do {                            \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_FATAL)
+#    define SFATAL_LOCAL_T(format, ...)                                                                                                                                           \
+        do {                                                                                                                                                                      \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelFatal) {                                                                                                    \
+                ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, SKL_LOG_TAG format, ##__VA_ARGS__); \
+            }                                                                                                                                                                     \
+        } while (0)
+#else
+#    define SFATAL_LOCAL_T(format, ...) \
+        do {                            \
+        } while (0)
+#endif
 
 #define SLOGGER_SINK_NET    skl::CSLoggerNetSinkId
 #define SLOGGER_SINK_FILE_H skl::CSLoggerFileHandleSinkId
@@ -53,28 +302,97 @@ constexpr skl::slogger_sink_id_t CSLoggerLocalSink = ::skl::CSLoggerFileHandleSi
 #define SLOGGER_SINK_CUSTOM skl::CSLoggerCustomSink
 
 // Log into the specific sink (eg, SLOGGER_SINK_NET, SLOGGER_SINK_FILE_H etc)
-#define SDEBUG_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SINFO_SPECIFIC(sink, format, ...)    ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SWARNING_SPECIFIC(sink, format, ...) ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SERROR_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
-#define SFATAL_SPECIFIC(sink, format, ...)   ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__)
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_DEBUG)
+#    define SDEBUG_SPECIFIC(sink, format, ...)                                                                                                           \
+        do {                                                                                                                                             \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelDebug) {                                                                           \
+                ::skl::skl_log_specific<::skl::ELogDebug, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                            \
+        } while (0)
+#else
+#    define SDEBUG_SPECIFIC(sink, format, ...) \
+        do {                                   \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_INFO)
+#    define SINFO_SPECIFIC(sink, format, ...)                                                                                                           \
+        do {                                                                                                                                            \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelInfo) {                                                                           \
+                ::skl::skl_log_specific<::skl::ELogInfo, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                           \
+        } while (0)
+#else
+#    define SINFO_SPECIFIC(sink, format, ...) \
+        do {                                  \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_WARNING)
+#    define SWARNING_SPECIFIC(sink, format, ...)                                                                                                           \
+        do {                                                                                                                                               \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelWarning) {                                                                           \
+                ::skl::skl_log_specific<::skl::ELogWarning, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                              \
+        } while (0)
+#else
+#    define SWARNING_SPECIFIC(sink, format, ...) \
+        do {                                     \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_ERROR)
+#    define SERROR_SPECIFIC(sink, format, ...)                                                                                                           \
+        do {                                                                                                                                             \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelError) {                                                                           \
+                ::skl::skl_log_specific<::skl::ELogError, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                            \
+        } while (0)
+#else
+#    define SERROR_SPECIFIC(sink, format, ...) \
+        do {                                   \
+        } while (0)
+#endif
+
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_FATAL)
+#    define SFATAL_SPECIFIC(sink, format, ...)                                                                                                           \
+        do {                                                                                                                                             \
+            if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelFatal) {                                                                           \
+                ::skl::skl_log_specific<::skl::ELogFatal, SKL_CURRENT_FILE_NAME.length(), __LINE__>(sink, SKL_CURRENT_FILE_NAME, format, ##__VA_ARGS__); \
+            }                                                                                                                                            \
+        } while (0)
+#else
+#    define SFATAL_SPECIFIC(sink, format, ...) \
+        do {                                   \
+        } while (0)
+#endif
 
 // [LibInit] Trace call utility
-#define STRACE                                                                                                                                                 \
-    struct SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) {                                                                                                      \
-        const char* m_fn_name;                                                                                                                                 \
-        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &)             = delete;                               \
-        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &) = delete;                               \
-        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)                  = delete;                               \
-        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)      = delete;                               \
-        SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const char* f_fn_name) noexcept                                                                           \
-            : m_fn_name(f_fn_name) {                                                                                                                           \
-            ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, ">> {}", f_fn_name); \
-        }                                                                                                                                                      \
-        ~SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)() noexcept {                                                                                             \
-            ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, "<< {}", m_fn_name); \
-        }                                                                                                                                                      \
-    } SKL_LOG_CONCATENATE(__TraceUtility_, __LINE__){__PRETTY_FUNCTION__};
+#if (SKL_LOG_LEVEL_MASK & SKL_LOG_BIT_TRACE)
+#    define STRACE                                                                                                                                                     \
+        struct SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) {                                                                                                          \
+            const char* m_fn_name;                                                                                                                                     \
+            SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &)             = delete;                                   \
+            SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(const SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &) = delete;                                   \
+            SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)                  = delete;                                   \
+            SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) & operator=(SKL_LOG_CONCATENATE(TraceUtility_, __LINE__) &&)      = delete;                                   \
+            SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)(const char* f_fn_name) noexcept                                                                               \
+                : m_fn_name(f_fn_name) {                                                                                                                               \
+                if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelTrace) {                                                                                     \
+                    ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, ">> {}", f_fn_name); \
+                }                                                                                                                                                      \
+            }                                                                                                                                                          \
+            ~SKL_LOG_CONCATENATE(TraceUtility_, __LINE__)() noexcept {                                                                                                 \
+                if (::skl::skl_get_log_level_mask() & ::skl::CSLoggerLevelTrace) {                                                                                     \
+                    ::skl::skl_log_specific<::skl::ELogTrace, SKL_CURRENT_FILE_NAME.length(), __LINE__>(CSLoggerLocalSink, SKL_CURRENT_FILE_NAME, "<< {}", m_fn_name); \
+                }                                                                                                                                                      \
+            }                                                                                                                                                          \
+        } SKL_LOG_CONCATENATE(__TraceUtility_, __LINE__) {                                                                                                             \
+            __PRETTY_FUNCTION__                                                                                                                                        \
+        }
+#else
+#    define STRACE
+#endif
 
 #define SKL_IP_TO_LOG(ip)   ((ip >> 24U) & 0xFFU), ((ip >> 16U) & 0xFFU), ((ip >> 8U) & 0xFFU), ip & 0xFFU
 #define SKL_IP_LOG_WILDCARD "{}.{}.{}.{}"

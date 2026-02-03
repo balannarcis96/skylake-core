@@ -7,9 +7,16 @@ include_guard()
 include(SkylakeCoreUtils)
 include(SkylakeCoreWarnings)
 include(SkylakeCoreOptionValues)
+include(SkylakeCoreLogging)
 
 # Build type
 set(SKL_BUILD_TYPE "DEV" CACHE STRING "[CORE] Build type")
+
+# Logging configuration - bit masks for each build type
+# Bit 0: Fatal, Bit 1: Error, Bit 2: Warning, Bit 3: Info, Bit 4: Debug, Bit 5: Trace
+set(SKL_LOG_LEVEL_SHIPPING "0x3" CACHE STRING "[CORE] Log level mask for SHIPPING build (default: Fatal|Error)")
+set(SKL_LOG_LEVEL_STAGING "0xF" CACHE STRING "[CORE] Log level mask for STAGING build (default: Fatal|Error|Warning|Info)")
+set(SKL_LOG_LEVEL_DEV "0x3F" CACHE STRING "[CORE] Log level mask for DEV build (default: All levels)")
 
 # Misc
 set(SKL_CORE_ENABLE_SANITIZATION ON CACHE BOOL "[DEV/STAGING] Enable address sanitization")
