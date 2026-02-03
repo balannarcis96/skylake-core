@@ -5,6 +5,7 @@
 //!
 #pragma once
 
+#include "skl_string_view"
 #include "skl_buffer_view"
 #include "skl_pair"
 
@@ -97,6 +98,27 @@ struct alignas(8u) GUID {
         return {m_low, m_high};
     }
 
+    //! Extract raw bytes into provided byte array
+    //! \param out Destination byte array to fill with GUID bytes
+    constexpr void raw(GUID_raw_t& out) const noexcept {
+        out[0]  = static_cast<byte>(m_low & 0xffu);
+        out[1]  = static_cast<byte>((m_low >> 8u) & 0xffu);
+        out[2]  = static_cast<byte>((m_low >> 16u) & 0xffu);
+        out[3]  = static_cast<byte>((m_low >> 24u) & 0xffu);
+        out[4]  = static_cast<byte>((m_low >> 32u) & 0xffu);
+        out[5]  = static_cast<byte>((m_low >> 40u) & 0xffu);
+        out[6]  = static_cast<byte>((m_low >> 48u) & 0xffu);
+        out[7]  = static_cast<byte>((m_low >> 56u) & 0xffu);
+        out[8]  = static_cast<byte>(m_high & 0xffu);
+        out[9]  = static_cast<byte>((m_high >> 8u) & 0xffu);
+        out[10] = static_cast<byte>((m_high >> 16u) & 0xffu);
+        out[11] = static_cast<byte>((m_high >> 24u) & 0xffu);
+        out[12] = static_cast<byte>((m_high >> 32u) & 0xffu);
+        out[13] = static_cast<byte>((m_high >> 40u) & 0xffu);
+        out[14] = static_cast<byte>((m_high >> 48u) & 0xffu);
+        out[15] = static_cast<byte>((m_high >> 56u) & 0xffu);
+    }
+
     [[nodiscard]] constexpr bool operator==(const GUID& f_other) const noexcept {
         return m_low == f_other.m_low && m_high == f_other.m_high;
     }
@@ -105,27 +127,68 @@ struct alignas(8u) GUID {
         return (m_low | m_high) == 0u;
     }
 
-    void to_string(skl_buffer_view f_target_buffer) const noexcept;
+    //! Convert GUID to hex string representation (32 characters, no dashes)
+    //! \param f_target_buffer Buffer to write the string into (must have space for at least 33 bytes including null terminator)
+    //! \return Number of characters written (not including null terminator)
+    //! \example "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    [[nodiscard]] u64 to_string(skl_buffer_view f_target_buffer) const noexcept;
+
+    //! Convert GUID to hex string representation using thread-local buffer
+    //! \return String view of the GUID in hex format (32 characters, no dashes)
+    //! \warning Returns a view into thread-local storage - copy if persistence is needed
+    [[nodiscard]] skl_string_view to_string() const noexcept;
+
+    //! Convert GUID to fancy hex string representation with dashes (36 characters)
+    //! \param f_target_buffer Buffer to write the string into (must have space for at least 37 bytes including null terminator)
+    //! \return Number of characters written (not including null terminator)
+    //! \example "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+    [[nodiscard]] u64 to_string_fancy(skl_buffer_view f_target_buffer) const noexcept;
+
+    //! Convert GUID to fancy hex string representation with dashes using thread-local buffer
+    //! \return String view of the GUID in fancy hex format (36 characters with dashes)
+    //! \warning Returns a view into thread-local storage - copy if persistence is needed
+    //! \example "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+    [[nodiscard]] skl_string_view to_string_fancy() const noexcept;
 
 private:
     u64 m_low{0u};
     u64 m_high{0u};
 };
 
-//! [LibInit][ThreadLocal] Make new guid
+//! Copy GUID raw bytes from input to output
+//! \param in Source GUID raw bytes
+//! \param out Destination GUID raw bytes
+constexpr void copy_guid_raw(const GUID_raw_t& in, GUID_raw_t& out) noexcept {
+    for (byte i = 0u; i < CGUIDSize; ++i) {
+        out[i] = in[i];
+    }
+}
+
+//! [LibInit][ThreadLocal] Generate a new random GUID
+//! \return A new GUID with all 16 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note High quality randomness, suitable for general use
 [[nodiscard]] GUID make_guid() noexcept;
 
-//! [LibInit][ThreadLocal] Make new guid
-//! \remark Faster, less "collision-safe"
+//! [LibInit][ThreadLocal] Generate a new random GUID (fast)
+//! \return A new GUID with all 16 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note Faster than make_guid() but with slightly higher collision probability
+//! \note Uses 4x u32 random calls instead of 16x byte-range calls
 [[nodiscard]] GUID make_guid_fast() noexcept;
 
-//! Make new guid
-//! \remark Creates new instance of SklRand on each call
+//! Generate a new random GUID (global, non-thread-local)
+//! \return A new GUID with all 16 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_guid)
+//! \note Does not require thread-local initialization
+//! \note High quality randomness, suitable for general use
 [[nodiscard]] GUID g_make_guid() noexcept;
 
-//! Make new guid
-//! \remark Creates new instance of SklRand on each call
-//! \remark Faster, less "collision-safe"
+//! Generate a new random GUID (global, non-thread-local, fast)
+//! \return A new GUID with all 16 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_guid_fast)
+//! \note Does not require thread-local initialization
+//! \note Faster than g_make_guid() but with slightly higher collision probability
 [[nodiscard]] GUID g_make_guid_fast() noexcept;
 } // namespace skl
 

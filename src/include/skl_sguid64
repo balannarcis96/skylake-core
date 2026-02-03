@@ -8,6 +8,7 @@
 #pragma once
 
 #include "skl_buffer_view"
+#include "skl_string_view"
 
 namespace skl {
 //! Size of a SGUID64 in bytes
@@ -31,27 +32,24 @@ struct alignas(8u) SGUID64 {
 
     //! Construct from raw byte array
     constexpr SGUID64(SGUID64_raw_t f_raw) noexcept
-        : m_data{f_raw[0U], f_raw[1U], f_raw[2U], f_raw[3U],
-                 f_raw[4U], f_raw[5U], f_raw[6U], f_raw[7U]} {
+        : m_data{f_raw[0U], f_raw[1U], f_raw[2U], f_raw[3U], f_raw[4U], f_raw[5U], f_raw[6U], f_raw[7U]} {
     }
 
     //! Construct with specific bytes
-    constexpr SGUID64(byte f_byte_1, byte f_byte_2, byte f_byte_3, byte f_byte_4,
-                      byte f_byte_5, byte f_byte_6, byte f_byte_7, byte f_byte_8) noexcept
-        : m_data{f_byte_1, f_byte_2, f_byte_3, f_byte_4,
-                 f_byte_5, f_byte_6, f_byte_7, f_byte_8} {
+    constexpr SGUID64(byte f_byte_1, byte f_byte_2, byte f_byte_3, byte f_byte_4, byte f_byte_5, byte f_byte_6, byte f_byte_7, byte f_byte_8) noexcept
+        : m_data{f_byte_1, f_byte_2, f_byte_3, f_byte_4, f_byte_5, f_byte_6, f_byte_7, f_byte_8} {
     }
 
     //! Construct with specific u64 value
     constexpr SGUID64(u64 f_value) noexcept
-        : m_data{static_cast<byte>((f_value >> 56u) & 0xffu),
-                 static_cast<byte>((f_value >> 48u) & 0xffu),
-                 static_cast<byte>((f_value >> 40u) & 0xffu),
-                 static_cast<byte>((f_value >> 32u) & 0xffu),
-                 static_cast<byte>((f_value >> 24u) & 0xffu),
-                 static_cast<byte>((f_value >> 16u) & 0xffu),
+        : m_data{static_cast<byte>(f_value & 0xffu),
                  static_cast<byte>((f_value >> 8u) & 0xffu),
-                 static_cast<byte>(f_value & 0xffu)} {
+                 static_cast<byte>((f_value >> 16u) & 0xffu),
+                 static_cast<byte>((f_value >> 24u) & 0xffu),
+                 static_cast<byte>((f_value >> 32u) & 0xffu),
+                 static_cast<byte>((f_value >> 40u) & 0xffu),
+                 static_cast<byte>((f_value >> 48u) & 0xffu),
+                 static_cast<byte>((f_value >> 56u) & 0xffu)} {
     }
 
     constexpr SGUID64(const SGUID64&) noexcept  = default;
@@ -100,7 +98,16 @@ struct alignas(8u) SGUID64 {
             != 0u;
     }
 
-    void to_string(skl_buffer_view f_target_buffer) const noexcept;
+    //! Convert SGUID64 to hex string representation (16 characters)
+    //! \param f_target_buffer Buffer to write the string into (must have space for at least 17 bytes including null terminator)
+    //! \return Number of characters written (not including null terminator)
+    //! \example "a1b2c3d4e5f6a7b8"
+    [[nodiscard]] u64 to_string(skl_buffer_view f_target_buffer) const noexcept;
+
+    //! Convert SGUID64 to hex string representation using thread-local buffer
+    //! \return String view of the SGUID64 in hex format (16 characters)
+    //! \warning Returns a view into thread-local storage - copy if persistence is needed
+    [[nodiscard]] skl_string_view to_string() const noexcept;
 
     [[nodiscard]] constexpr byte operator[](u64 f_index) const noexcept {
         return m_data[f_index];
@@ -110,25 +117,46 @@ private:
     SGUID64_raw_t m_data; //!< The 8 bytes of the small-guid
 };
 
-//! [LibInit][ThreadLocal] Make new small-guid 64
+//! Copy SGUID64 raw bytes from input to output
+//! \param in Source SGUID64 raw bytes
+//! \param out Destination SGUID64 raw bytes
+constexpr void copy_sguid64_raw(const SGUID64_raw_t& in, SGUID64_raw_t& out) noexcept {
+    for (byte i = 0u; i < CSGUID64Size; ++i) {
+        out[i] = in[i];
+    }
+}
+
+//! [LibInit][ThreadLocal] Generate a new random SGUID64 (8 bytes)
+//! \return A new SGUID64 with all 8 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note High quality randomness, suitable for general use
+//! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 make_sguid64() noexcept;
 
-//! [LibInit][ThreadLocal] Make new small-guid 64
-//! \remark Faster, less "collision-safe"
+//! [LibInit][ThreadLocal] Generate a new random SGUID64 (fast)
+//! \return A new SGUID64 with all 8 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note Uses 2x u32 random calls instead of 8x byte-range calls
+//! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 make_sguid64_fast() noexcept;
 
-//! Make new small-guid 64
-//! \remark Creates new instance of SklRand on each call
+//! Generate a new random SGUID64 (global, non-thread-local)
+//! \return A new SGUID64 with all 8 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_sguid64)
+//! \note Does not require thread-local initialization
+//! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 g_make_sguid64() noexcept;
 
-//! Make new small-guid 64
-//! \remark Creates new instance of SklRand on each call
-//! \remark Faster, less "collision-safe"
+//! Generate a new random SGUID64 (global, non-thread-local, fast)
+//! \return A new SGUID64 with all 8 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_sguid64_fast)
+//! \note Does not require thread-local initialization
+//! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 g_make_sguid64_fast() noexcept;
 } // namespace skl
 
 namespace skl {
-constexpr SGUID64 SGUID64_Zero{};                                                                                             //!< Null SGUID64
+constexpr SGUID64 SGUID64_Zero{};                                                                                      //!< Null SGUID64
 constexpr SGUID64 SGUID64_Max{u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu), u8(0xffu)}; //!< Max SGUID64
 
 struct sguid64_hash {

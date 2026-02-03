@@ -11,6 +11,10 @@
 #include "skl_sguid64"
 #include "skl_rand"
 
+namespace {
+thread_local char g_string_buffer[64u];
+}
+
 namespace skl {
 GUID make_guid() noexcept {
     SklRand& rand{get_thread_rand()};
@@ -72,49 +76,117 @@ SGUID g_make_sguid_fast() noexcept {
     return {rand.next()};
 }
 
-void GUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
+u64 GUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
+    // Note: snprintf can return negative on encoding errors, but this cannot happen here:
+    // - Format strings are hardcoded and valid
+    // - Arguments are simple unsigned integers formatted as hex
+    // - No wide character conversions or locale-dependent behavior
+    // Therefore, we safely assume non-negative return values
+
     if (is_null()) {
-        std::strncpy(reinterpret_cast<char*>(f_target_buffer.buffer),
-                     "00000000-0000-0000-0000-000000000000",
-                     f_target_buffer.length);
-        return;
+        const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                                  f_target_buffer.length,
+                                  "00000000000000000000000000000000");
+        return static_cast<u64>(len);
     }
 
-    (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
-                   f_target_buffer.length,
-                   "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-                   static_cast<unsigned>(m_low & 0xffu),
-                   static_cast<unsigned>((m_low >> 8u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 16u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 24u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 32u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 40u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 48u) & 0xffu),
-                   static_cast<unsigned>((m_low >> 56u) & 0xffu),
-                   static_cast<unsigned>(m_high & 0xffu),
-                   static_cast<unsigned>((m_high >> 8u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 16u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 24u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 32u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 40u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 48u) & 0xffu),
-                   static_cast<unsigned>((m_high >> 56u) & 0xffu));
+    const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                              f_target_buffer.length,
+                              "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+                              static_cast<unsigned>(m_low & 0xffu),
+                              static_cast<unsigned>((m_low >> 8u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 16u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 24u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 32u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 40u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 48u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 56u) & 0xffu),
+                              static_cast<unsigned>(m_high & 0xffu),
+                              static_cast<unsigned>((m_high >> 8u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 16u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 24u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 32u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 40u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 48u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 56u) & 0xffu));
+    return static_cast<u64>(len);
 }
 
-void SGUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
+skl_string_view GUID::to_string() const noexcept {
+    skl_buffer_view buffer_view{g_string_buffer};
+    buffer_view.position = to_string(buffer_view);
+    return skl_string_view::exact(g_string_buffer, buffer_view.position);
+}
+
+u64 GUID::to_string_fancy(skl_buffer_view f_target_buffer) const noexcept {
+    // Note: snprintf can return negative on encoding errors, but this cannot happen here:
+    // - Format strings are hardcoded and valid
+    // - Arguments are simple unsigned integers formatted as hex
+    // - No wide character conversions or locale-dependent behavior
+    // Therefore, we safely assume non-negative return values
+
     if (is_null()) {
-        std::strncpy(reinterpret_cast<char*>(f_target_buffer.buffer),
-                     "00000000",
-                     f_target_buffer.length);
-        return;
+        const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                                  f_target_buffer.length,
+                                  "00000000-0000-0000-0000-000000000000");
+        return static_cast<u64>(len);
     }
-    (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
-                   f_target_buffer.length,
-                   "%02x%02x%02x%02x",
-                   static_cast<unsigned>((*this)[0]),
-                   static_cast<unsigned>((*this)[1]),
-                   static_cast<unsigned>((*this)[2]),
-                   static_cast<unsigned>((*this)[3]));
+
+    const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                              f_target_buffer.length,
+                              "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                              static_cast<unsigned>(m_low & 0xffu),
+                              static_cast<unsigned>((m_low >> 8u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 16u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 24u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 32u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 40u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 48u) & 0xffu),
+                              static_cast<unsigned>((m_low >> 56u) & 0xffu),
+                              static_cast<unsigned>(m_high & 0xffu),
+                              static_cast<unsigned>((m_high >> 8u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 16u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 24u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 32u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 40u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 48u) & 0xffu),
+                              static_cast<unsigned>((m_high >> 56u) & 0xffu));
+    return static_cast<u64>(len);
+}
+
+skl_string_view GUID::to_string_fancy() const noexcept {
+    skl_buffer_view buffer_view{g_string_buffer};
+    buffer_view.position = to_string_fancy(buffer_view);
+    return skl_string_view::exact(g_string_buffer, buffer_view.position);
+}
+
+u64 SGUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
+    // Note: snprintf can return negative on encoding errors, but this cannot happen here:
+    // - Format strings are hardcoded and valid
+    // - Arguments are simple unsigned integers formatted as hex
+    // - No wide character conversions or locale-dependent behavior
+    // Therefore, we safely assume non-negative return values
+
+    if (is_null()) {
+        const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                                  f_target_buffer.length,
+                                  "00000000");
+        return static_cast<u64>(len);
+    }
+    const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                              f_target_buffer.length,
+                              "%02x%02x%02x%02x",
+                              static_cast<unsigned>((*this)[0]),
+                              static_cast<unsigned>((*this)[1]),
+                              static_cast<unsigned>((*this)[2]),
+                              static_cast<unsigned>((*this)[3]));
+    return static_cast<u64>(len);
+}
+
+skl_string_view SGUID::to_string() const noexcept {
+    skl_buffer_view buffer_view{g_string_buffer};
+    buffer_view.position = to_string(buffer_view);
+    return skl_string_view::exact(g_string_buffer, buffer_view.position);
 }
 
 SGUID64 make_sguid64() noexcept {
@@ -147,23 +219,36 @@ SGUID64 g_make_sguid64_fast() noexcept {
     return {value};
 }
 
-void SGUID64::to_string(skl_buffer_view f_target_buffer) const noexcept {
+u64 SGUID64::to_string(skl_buffer_view f_target_buffer) const noexcept {
+    // Note: snprintf can return negative on encoding errors, but this cannot happen here:
+    // - Format strings are hardcoded and valid
+    // - Arguments are simple unsigned integers formatted as hex
+    // - No wide character conversions or locale-dependent behavior
+    // Therefore, we safely assume non-negative return values
+
     if (is_null()) {
-        std::strncpy(reinterpret_cast<char*>(f_target_buffer.buffer),
-                     "0000000000000000",
-                     f_target_buffer.length);
-        return;
+        const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                                  f_target_buffer.length,
+                                  "0000000000000000");
+        return static_cast<u64>(len);
     }
-    (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
-                   f_target_buffer.length,
-                   "%02x%02x%02x%02x%02x%02x%02x%02x",
-                   static_cast<unsigned>((*this)[0]),
-                   static_cast<unsigned>((*this)[1]),
-                   static_cast<unsigned>((*this)[2]),
-                   static_cast<unsigned>((*this)[3]),
-                   static_cast<unsigned>((*this)[4]),
-                   static_cast<unsigned>((*this)[5]),
-                   static_cast<unsigned>((*this)[6]),
-                   static_cast<unsigned>((*this)[7]));
+    const auto len = snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                              f_target_buffer.length,
+                              "%02x%02x%02x%02x%02x%02x%02x%02x",
+                              static_cast<unsigned>((*this)[0]),
+                              static_cast<unsigned>((*this)[1]),
+                              static_cast<unsigned>((*this)[2]),
+                              static_cast<unsigned>((*this)[3]),
+                              static_cast<unsigned>((*this)[4]),
+                              static_cast<unsigned>((*this)[5]),
+                              static_cast<unsigned>((*this)[6]),
+                              static_cast<unsigned>((*this)[7]));
+    return static_cast<u64>(len);
+}
+
+skl_string_view SGUID64::to_string() const noexcept {
+    skl_buffer_view buffer_view{g_string_buffer};
+    buffer_view.position = to_string(buffer_view);
+    return skl_string_view::exact(g_string_buffer, buffer_view.position);
 }
 } // namespace skl

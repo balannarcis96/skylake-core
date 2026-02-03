@@ -8,6 +8,7 @@
 #pragma once
 
 #include "skl_buffer_view"
+#include "skl_string_view"
 
 namespace skl {
 //! Size of a SGUID in bytes
@@ -41,10 +42,10 @@ struct alignas(4u) SGUID {
 
     //! Construct with specific u32 value
     constexpr SGUID(u32 f_value) noexcept
-        : m_data{static_cast<byte>((f_value >> 24u) & 0xffu),
-                 static_cast<byte>((f_value >> 16u) & 0xffu),
+        : m_data{static_cast<byte>(f_value & 0xffu),
                  static_cast<byte>((f_value >> 8u) & 0xffu),
-                 static_cast<byte>(f_value & 0xffu)} {
+                 static_cast<byte>((f_value >> 16u) & 0xffu),
+                 static_cast<byte>((f_value >> 24u) & 0xffu)} {
     }
 
     constexpr SGUID(const SGUID&) noexcept  = default;
@@ -81,7 +82,16 @@ struct alignas(4u) SGUID {
             != 0u;
     }
 
-    void to_string(skl_buffer_view f_target_buffer) const noexcept;
+    //! Convert SGUID to hex string representation (8 characters)
+    //! \param f_target_buffer Buffer to write the string into (must have space for at least 9 bytes including null terminator)
+    //! \return Number of characters written (not including null terminator)
+    //! \example "a1b2c3d4"
+    [[nodiscard]] u64 to_string(skl_buffer_view f_target_buffer) const noexcept;
+
+    //! Convert SGUID to hex string representation using thread-local buffer
+    //! \return String view of the SGUID in hex format (8 characters)
+    //! \warning Returns a view into thread-local storage - copy if persistence is needed
+    [[nodiscard]] skl_string_view to_string() const noexcept;
 
     [[nodiscard]] constexpr byte operator[](u64 f_index) const noexcept {
         return m_data[f_index];
@@ -91,20 +101,41 @@ private:
     SGUID_raw_t m_data; //!< The 4 bytes of the small-guid
 };
 
-//! [LibInit][ThreadLocal] Make new small-guid
+//! Copy SGUID raw bytes from input to output
+//! \param in Source SGUID raw bytes
+//! \param out Destination SGUID raw bytes
+constexpr void copy_sguid_raw(const SGUID_raw_t& in, SGUID_raw_t& out) noexcept {
+    for (byte i = 0u; i < CSGUIDSize; ++i) {
+        out[i] = in[i];
+    }
+}
+
+//! [LibInit][ThreadLocal] Generate a new random small GUID (4 bytes)
+//! \return A new SGUID with all 4 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note High quality randomness, suitable for general use
+//! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID make_sguid() noexcept;
 
-//! [LibInit][ThreadLocal] Make new small-guid
-//! \remark Faster, less "collision-safe"
+//! [LibInit][ThreadLocal] Generate a new random small GUID (fast)
+//! \return A new SGUID with all 4 bytes randomized
+//! \note Uses thread-local random number generator (requires LibInit)
+//! \note Single u32 random call, fastest SGUID generation
+//! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID make_sguid_fast() noexcept;
 
-//! Make new small-guid
-//! \remark Creates new instance of SklRand on each call
+//! Generate a new random small GUID (global, non-thread-local)
+//! \return A new SGUID with all 4 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_sguid)
+//! \note Does not require thread-local initialization
+//! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID g_make_sguid() noexcept;
 
-//! Make new small-guid
-//! \remark Creates new instance of SklRand on each call
-//! \remark Faster, less "collision-safe"
+//! Generate a new random small GUID (global, non-thread-local, fast)
+//! \return A new SGUID with all 4 bytes randomized
+//! \note Creates a new SklRand instance on each call (slower than make_sguid_fast)
+//! \note Does not require thread-local initialization
+//! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID g_make_sguid_fast() noexcept;
 } // namespace skl
 
