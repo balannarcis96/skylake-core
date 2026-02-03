@@ -8,6 +8,7 @@
 
 #include "skl_guid"
 #include "skl_sguid"
+#include "skl_sguid64"
 #include "skl_rand"
 
 namespace skl {
@@ -114,5 +115,55 @@ void SGUID::to_string(skl_buffer_view f_target_buffer) const noexcept {
                    static_cast<unsigned>((*this)[1]),
                    static_cast<unsigned>((*this)[2]),
                    static_cast<unsigned>((*this)[3]));
+}
+
+SGUID64 make_sguid64() noexcept {
+    SklRand& rand{get_thread_rand()};
+    byte     rand_bytes[SGUID64::CSize];
+    for (auto& rand_byte : rand_bytes) {
+        rand_byte = rand.next_range(0U, 0xFFU);
+    }
+    return {rand_bytes};
+}
+
+SGUID64 make_sguid64_fast() noexcept {
+    SklRand&  rand{get_thread_rand()};
+    const u64 value = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    return {value};
+}
+
+SGUID64 g_make_sguid64() noexcept {
+    SklRand rand{};
+    byte    rand_bytes[SGUID64::CSize];
+    for (auto& rand_byte : rand_bytes) {
+        rand_byte = rand.next_range(0U, 0xFFU);
+    }
+    return {rand_bytes};
+}
+
+SGUID64 g_make_sguid64_fast() noexcept {
+    SklRand   rand{};
+    const u64 value = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    return {value};
+}
+
+void SGUID64::to_string(skl_buffer_view f_target_buffer) const noexcept {
+    if (is_null()) {
+        std::strncpy(reinterpret_cast<char*>(f_target_buffer.buffer),
+                     "0000000000000000",
+                     f_target_buffer.length);
+        return;
+    }
+    (void)snprintf(reinterpret_cast<char*>(f_target_buffer.buffer),
+                   f_target_buffer.length,
+                   "%02x%02x%02x%02x%02x%02x%02x%02x",
+                   static_cast<unsigned>((*this)[0]),
+                   static_cast<unsigned>((*this)[1]),
+                   static_cast<unsigned>((*this)[2]),
+                   static_cast<unsigned>((*this)[3]),
+                   static_cast<unsigned>((*this)[4]),
+                   static_cast<unsigned>((*this)[5]),
+                   static_cast<unsigned>((*this)[6]),
+                   static_cast<unsigned>((*this)[7]));
 }
 } // namespace skl
