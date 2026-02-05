@@ -1,21 +1,40 @@
 //!
-//! \file skl_flags
+//! \file std_flags
 //!
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #pragma once
 
-#include "skl_def"
+#include <bit>
+#include <type_traits>
 
-namespace skl {
+namespace std {
 //! Bitwise flags manipulation API
 //! \note Zero-cost abstraction: all methods compile to identical assembly as hand-written bitwise operations
 //! \tparam _IngeterType Underlying integral type for the flags
 //! \tparam _OuterType Either the same as _IngeterType or an enum with underlying type _IngeterType
 template <typename _IngeterType, typename _OuterType = _IngeterType>
-    requires(__is_integral(_IngeterType) && (__is_same(_IngeterType, _OuterType) || (__is_enum(_OuterType) && __is_same(__underlying_type(_OuterType), _IngeterType))))
+    requires(std::is_integral_v<_IngeterType> && (std::is_same_v<_IngeterType, _OuterType> || (std::is_enum_v<_OuterType> && std::is_same_v<std::underlying_type_t<_OuterType>, _IngeterType>)))
 struct flags_api {
-    SKL_TYPE_PURE_INTERFACE_CLASS_EX(flags_api);
+public:
+    // Disable construction and copying
+    flags_api() noexcept                   = delete;
+    ~flags_api() noexcept                  = delete;
+    flags_api(const flags_api&)            = delete;
+    flags_api& operator=(const flags_api&) = delete;
+    flags_api(flags_api&&)                 = delete;
+    flags_api& operator=(flags_api&&)      = delete;
+
+    // Disable dynamic memory allocation
+    static void* operator new(std::size_t, void* ptr) noexcept {
+        return ptr;
+    }
+    static void* operator new(std::size_t)             = delete;
+    static void* operator new[](std::size_t)           = delete;
+    static void  operator delete(void*)                = delete;
+    static void  operator delete[](void*)              = delete;
+    static void  operator delete(void*, std::size_t)   = delete;
+    static void  operator delete[](void*, std::size_t) = delete;
 
     //! Check if specific flags are set
     [[nodiscard]] constexpr bool test(_IngeterType f_flags) const noexcept {
@@ -24,7 +43,7 @@ struct flags_api {
 
     //! Check if specific flags are set (enum overload)
     [[nodiscard]] constexpr bool test(_OuterType f_flags) const noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return test(static_cast<_IngeterType>(f_flags));
     }
@@ -37,7 +56,7 @@ struct flags_api {
 
     //! Set specific flags (enum overload)
     flags_api& set(_OuterType f_flags) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return set(static_cast<_IngeterType>(f_flags));
     }
@@ -51,7 +70,7 @@ struct flags_api {
 
     //! Set multiple specific flags (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     flags_api& set() noexcept {
         self() |= (static_cast<_IngeterType>(_Flags) | ...);
         return *this;
@@ -65,7 +84,7 @@ struct flags_api {
 
     //! Clear specific flags (enum overload)
     flags_api& clear(_OuterType f_flags) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return clear(static_cast<_IngeterType>(f_flags));
     }
@@ -79,7 +98,7 @@ struct flags_api {
 
     //! Clear multiple specific flags (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     flags_api& clear() noexcept {
         self() &= ~(static_cast<_IngeterType>(_Flags) | ...);
         return *this;
@@ -93,7 +112,7 @@ struct flags_api {
 
     //! Toggle specific flags (enum overload)
     flags_api& toggle(_OuterType f_flags) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return toggle(static_cast<_IngeterType>(f_flags));
     }
@@ -107,7 +126,7 @@ struct flags_api {
 
     //! Toggle multiple specific flags (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     flags_api& toggle() noexcept {
         self() ^= (static_cast<_IngeterType>(_Flags) | ...);
         return *this;
@@ -122,7 +141,7 @@ struct flags_api {
 
     //! Check if multiple specific flags are set (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     [[nodiscard]] constexpr bool test() const noexcept {
         constexpr _IngeterType mask = (static_cast<_IngeterType>(_Flags) | ...);
         return (self() & mask) == mask;
@@ -135,7 +154,7 @@ struct flags_api {
 
     //! Check if any of the specified flags are set (enum overload)
     [[nodiscard]] constexpr bool any(_OuterType f_flags) const noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return any(static_cast<_IngeterType>(f_flags));
     }
@@ -148,7 +167,7 @@ struct flags_api {
 
     //! Check if any of the specified flags are set (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     [[nodiscard]] constexpr bool any() const noexcept {
         return (self() & (static_cast<_IngeterType>(_Flags) | ...)) != 0;
     }
@@ -160,7 +179,7 @@ struct flags_api {
 
     //! Check if none of the specified flags are set (enum overload)
     [[nodiscard]] constexpr bool none(_OuterType f_flags) const noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return none(static_cast<_IngeterType>(f_flags));
     }
@@ -173,7 +192,7 @@ struct flags_api {
 
     //! Check if none of the specified flags are set (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     [[nodiscard]] constexpr bool none() const noexcept {
         return (self() & (static_cast<_IngeterType>(_Flags) | ...)) == 0;
     }
@@ -190,7 +209,7 @@ struct flags_api {
 
     //! Check if only the specified flags are set (enum overload)
     [[nodiscard]] constexpr bool only(_OuterType f_flags) const noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return only(static_cast<_IngeterType>(f_flags));
     }
@@ -203,14 +222,14 @@ struct flags_api {
 
     //! Check if only the specified flags are set (enum overload)
     template <_OuterType... _Flags>
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     [[nodiscard]] constexpr bool only() const noexcept {
         return self() == (static_cast<_IngeterType>(_Flags) | ...);
     }
 
     //! Count the number of set flags
     [[nodiscard]] constexpr int count() const noexcept {
-        return __builtin_popcountll(static_cast<unsigned long long>(self()));
+        return std::popcount(static_cast<std::make_unsigned_t<_IngeterType>>(self()));
     }
 
     //! Set flags if condition is true
@@ -223,7 +242,7 @@ struct flags_api {
 
     //! Set flags if condition is true (enum overload)
     flags_api& set_if(_OuterType f_flags, bool f_condition) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return set_if(static_cast<_IngeterType>(f_flags), f_condition);
     }
@@ -238,7 +257,7 @@ struct flags_api {
 
     //! Clear flags if condition is true (enum overload)
     flags_api& clear_if(_OuterType f_flags, bool f_condition) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return clear_if(static_cast<_IngeterType>(f_flags), f_condition);
     }
@@ -257,7 +276,7 @@ struct flags_api {
 
     //! Set raw value directly (enum overload)
     flags_api& assign(_OuterType f_value) noexcept
-        requires(!__is_same(_IngeterType, _OuterType))
+        requires(!std::is_same_v<_IngeterType, _OuterType>)
     {
         return assign(static_cast<_IngeterType>(f_value));
     }
@@ -291,29 +310,29 @@ private:
 
 //! Create a flags_api reference from a raw integer reference (type deduced)
 template <typename T>
-    requires(__is_integral(T))
+    requires(std::is_integral_v<T>)
 [[nodiscard]] flags_api<T>& make_flags(T& f_raw) noexcept {
     return flags_api<T>::make(f_raw);
 }
 
 //! Create a const flags_api reference from a const raw integer reference (type deduced)
 template <typename T>
-    requires(__is_integral(T))
+    requires(std::is_integral_v<T>)
 [[nodiscard]] const flags_api<T>& make_flags(const T& f_raw) noexcept {
     return flags_api<T>::make(f_raw);
 }
 
 //! Create a flags_api reference with enum support (underlying type deduced from enum)
 template <typename TEnum>
-    requires(__is_enum(TEnum))
-[[nodiscard]] flags_api<__underlying_type(TEnum), TEnum>& make_flags(__underlying_type(TEnum)& f_raw) noexcept {
-    return flags_api<__underlying_type(TEnum), TEnum>::make(f_raw);
+    requires(std::is_enum_v<TEnum>)
+[[nodiscard]] flags_api<std::underlying_type_t<TEnum>, TEnum>& make_flags(std::underlying_type_t<TEnum>& f_raw) noexcept {
+    return flags_api<std::underlying_type_t<TEnum>, TEnum>::make(f_raw);
 }
 
 //! Create a const flags_api reference with enum support (underlying type deduced from enum)
 template <typename TEnum>
-    requires(__is_enum(TEnum))
-[[nodiscard]] const flags_api<__underlying_type(TEnum), TEnum>& make_flags(const __underlying_type(TEnum)& f_raw) noexcept {
-    return flags_api<__underlying_type(TEnum), TEnum>::make(f_raw);
+    requires(std::is_enum_v<TEnum>)
+[[nodiscard]] const flags_api<std::underlying_type_t<TEnum>, TEnum>& make_flags(const std::underlying_type_t<TEnum>& f_raw) noexcept {
+    return flags_api<std::underlying_type_t<TEnum>, TEnum>::make(f_raw);
 }
-} // namespace skl
+} // namespace std
