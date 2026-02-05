@@ -104,7 +104,7 @@ private:
 //! Copy SGUID raw bytes from input to output
 //! \param in Source SGUID raw bytes
 //! \param out Destination SGUID raw bytes
-constexpr void copy_sguid_raw(const SGUID_raw_t& in, SGUID_raw_t& out) noexcept {
+constexpr void copy_sguid_raw(const SGUID_raw_t in, SGUID_raw_t out) noexcept {
     for (byte i = 0u; i < CSGUIDSize; ++i) {
         out[i] = in[i];
     }

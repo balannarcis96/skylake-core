@@ -1,0 +1,266 @@
+//!
+//! \file skl_flags
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_def"
+
+namespace skl {
+//! Bitwise flags manipulation API
+//! \note Zero-cost abstraction: all methods compile to identical assembly as hand-written bitwise operations
+//! \tparam _IngeterType Underlying integral type for the flags
+//! \tparam _OuterType Either the same as _IngeterType or an enum with underlying type _IngeterType
+template <typename _IngeterType, typename _OuterType = _IngeterType>
+    requires(__is_integral(_IngeterType) && (__is_same(_IngeterType, _OuterType) || (__is_enum(_OuterType) && __is_same(__underlying_type(_OuterType), _IngeterType))))
+struct flags_api {
+    SKL_TYPE_PURE_INTERFACE_CLASS_EX(flags_api);
+
+    //! Check if specific flags are set
+    [[nodiscard]] constexpr bool test(_IngeterType f_flags) const noexcept {
+        return (self() & f_flags) == f_flags;
+    }
+
+    //! Check if specific flags are set (enum overload)
+    [[nodiscard]] constexpr bool test(_OuterType f_flags) const noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return test(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Set specific flags
+    flags_api& set(_IngeterType f_flags) noexcept {
+        self() |= f_flags;
+        return *this;
+    }
+
+    //! Set specific flags (enum overload)
+    flags_api& set(_OuterType f_flags) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return set(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Set multiple specific flags
+    template <_IngeterType... _Flags>
+    flags_api& set() noexcept {
+        self() |= (_Flags | ...);
+        return *this;
+    }
+
+    //! Clear specific flags
+    flags_api& clear(_IngeterType f_flags) noexcept {
+        self() &= ~f_flags;
+        return *this;
+    }
+
+    //! Clear specific flags (enum overload)
+    flags_api& clear(_OuterType f_flags) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return clear(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Clear multiple specific flags
+    template <_IngeterType... _Flags>
+    flags_api& clear() noexcept {
+        self() &= ~(_Flags | ...);
+        return *this;
+    }
+
+    //! Toggle specific flags
+    flags_api& toggle(_IngeterType f_flags) noexcept {
+        self() ^= f_flags;
+        return *this;
+    }
+
+    //! Toggle specific flags (enum overload)
+    flags_api& toggle(_OuterType f_flags) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return toggle(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Toggle multiple specific flags
+    template <_IngeterType... _Flags>
+    flags_api& toggle() noexcept {
+        self() ^= (_Flags | ...);
+        return *this;
+    }
+
+    //! Check if multiple specific flags are set
+    template <_IngeterType... _Flags>
+    [[nodiscard]] constexpr bool test() const noexcept {
+        constexpr _IngeterType mask = (_Flags | ...);
+        return (self() & mask) == mask;
+    }
+
+    //! Check if any of the specified flags are set
+    [[nodiscard]] constexpr bool any(_IngeterType f_flags) const noexcept {
+        return (self() & f_flags) != 0;
+    }
+
+    //! Check if any of the specified flags are set (enum overload)
+    [[nodiscard]] constexpr bool any(_OuterType f_flags) const noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return any(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Check if any of the specified flags are set
+    template <_IngeterType... _Flags>
+    [[nodiscard]] constexpr bool any() const noexcept {
+        return (self() & (_Flags | ...)) != 0;
+    }
+
+    //! Check if none of the specified flags are set
+    [[nodiscard]] constexpr bool none(_IngeterType f_flags) const noexcept {
+        return (self() & f_flags) == 0;
+    }
+
+    //! Check if none of the specified flags are set (enum overload)
+    [[nodiscard]] constexpr bool none(_OuterType f_flags) const noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return none(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Check if none of the specified flags are set
+    template <_IngeterType... _Flags>
+    [[nodiscard]] constexpr bool none() const noexcept {
+        return (self() & (_Flags | ...)) == 0;
+    }
+
+    //! Check if no flags are set
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return self() == 0;
+    }
+
+    //! Check if only the specified flags are set (exact match)
+    [[nodiscard]] constexpr bool only(_IngeterType f_flags) const noexcept {
+        return self() == f_flags;
+    }
+
+    //! Check if only the specified flags are set (enum overload)
+    [[nodiscard]] constexpr bool only(_OuterType f_flags) const noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return only(static_cast<_IngeterType>(f_flags));
+    }
+
+    //! Check if only the specified flags are set (exact match)
+    template <_IngeterType... _Flags>
+    [[nodiscard]] constexpr bool only() const noexcept {
+        return self() == (_Flags | ...);
+    }
+
+    //! Count the number of set flags
+    [[nodiscard]] constexpr int count() const noexcept {
+        return __builtin_popcountll(static_cast<unsigned long long>(self()));
+    }
+
+    //! Set flags if condition is true
+    flags_api& set_if(_IngeterType f_flags, bool f_condition) noexcept {
+        if (f_condition) {
+            self() |= f_flags;
+        }
+        return *this;
+    }
+
+    //! Set flags if condition is true (enum overload)
+    flags_api& set_if(_OuterType f_flags, bool f_condition) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return set_if(static_cast<_IngeterType>(f_flags), f_condition);
+    }
+
+    //! Clear flags if condition is true
+    flags_api& clear_if(_IngeterType f_flags, bool f_condition) noexcept {
+        if (f_condition) {
+            self() &= ~f_flags;
+        }
+        return *this;
+    }
+
+    //! Clear flags if condition is true (enum overload)
+    flags_api& clear_if(_OuterType f_flags, bool f_condition) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return clear_if(static_cast<_IngeterType>(f_flags), f_condition);
+    }
+
+    //! Clear all flags
+    flags_api& reset() noexcept {
+        self() = 0;
+        return *this;
+    }
+
+    //! Set raw value directly
+    flags_api& assign(_IngeterType f_value) noexcept {
+        self() = f_value;
+        return *this;
+    }
+
+    //! Set raw value directly (enum overload)
+    flags_api& assign(_OuterType f_value) noexcept
+        requires(!__is_same(_IngeterType, _OuterType))
+    {
+        return assign(static_cast<_IngeterType>(f_value));
+    }
+
+    //! Get raw value
+    [[nodiscard]] constexpr _IngeterType raw() const noexcept {
+        return self();
+    }
+
+    //! Create a flags_api reference from a raw integer reference
+    [[nodiscard]] static flags_api& make(_IngeterType& f_raw) noexcept {
+        return *reinterpret_cast<flags_api*>(&f_raw);
+    }
+
+    //! Create a const flags_api reference from a const raw integer reference
+    [[nodiscard]] static const flags_api& make(const _IngeterType& f_raw) noexcept {
+        return *reinterpret_cast<const flags_api*>(&f_raw);
+    }
+
+private:
+    //! Get mutable reference to underlying value
+    [[nodiscard]] _IngeterType& self() noexcept {
+        return *reinterpret_cast<_IngeterType*>(this);
+    }
+
+    //! Get const reference to underlying value
+    [[nodiscard]] const _IngeterType& self() const noexcept {
+        return *reinterpret_cast<const _IngeterType*>(this);
+    }
+};
+
+//! Create a flags_api reference from a raw integer reference (type deduced)
+template <typename T>
+    requires(__is_integral(T))
+[[nodiscard]] flags_api<T>& make_flags(T& f_raw) noexcept {
+    return flags_api<T>::make(f_raw);
+}
+
+//! Create a const flags_api reference from a const raw integer reference (type deduced)
+template <typename T>
+    requires(__is_integral(T))
+[[nodiscard]] const flags_api<T>& make_flags(const T& f_raw) noexcept {
+    return flags_api<T>::make(f_raw);
+}
+
+//! Create a flags_api reference with enum support (underlying type deduced from enum)
+template <typename TEnum>
+    requires(__is_enum(TEnum))
+[[nodiscard]] flags_api<__underlying_type(TEnum), TEnum>& make_flags(__underlying_type(TEnum)& f_raw) noexcept {
+    return flags_api<__underlying_type(TEnum), TEnum>::make(f_raw);
+}
+
+//! Create a const flags_api reference with enum support (underlying type deduced from enum)
+template <typename TEnum>
+    requires(__is_enum(TEnum))
+[[nodiscard]] const flags_api<__underlying_type(TEnum), TEnum>& make_flags(const __underlying_type(TEnum)& f_raw) noexcept {
+    return flags_api<__underlying_type(TEnum), TEnum>::make(f_raw);
+}
+} // namespace skl

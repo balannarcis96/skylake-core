@@ -165,6 +165,7 @@
         "skl_dod_fsm": "cpp",
         "skl_fsm": "cpp",
         "skl_huge_pages": "cpp",
+        "skl_flags": "cpp",
         "huge_pages_allocator": "cpp",
         "hugepage_buffer_pool": "cpp",
         "same_as": "cpp",

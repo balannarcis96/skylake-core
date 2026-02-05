@@ -158,7 +158,7 @@ private:
 //! Copy GUID raw bytes from input to output
 //! \param in Source GUID raw bytes
 //! \param out Destination GUID raw bytes
-constexpr void copy_guid_raw(const GUID_raw_t& in, GUID_raw_t& out) noexcept {
+constexpr void copy_guid_raw(const GUID_raw_t in, GUID_raw_t out) noexcept {
     for (byte i = 0u; i < CGUIDSize; ++i) {
         out[i] = in[i];
     }
