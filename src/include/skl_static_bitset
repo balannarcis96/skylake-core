@@ -63,7 +63,9 @@ public:
     static constexpr u64 CBitSize = CBitSizeOfSlice * CSliceCount;
 
     //! Number of left over bits in the last slice (0 if CSize is multiple of CBitSizeOfSlice)
-    static constexpr slice_t CLeftOverBits = CBitSizeOfSlice - (CSize & CBitSizeOfSliceMask);
+    static constexpr slice_t CLeftOverBits = (CSize & CBitSizeOfSliceMask) == 0u
+                                               ? slice_t(0u)
+                                               : slice_t(CBitSizeOfSlice - (CSize & CBitSizeOfSliceMask));
 
     //! Number of usable bits in the last slice (CBitSizeOfSlice if CSize is multiple of CBitSizeOfSlice)
     static constexpr slice_t CLastSliceUsableBits = CBitSizeOfSlice - CLeftOverBits;
