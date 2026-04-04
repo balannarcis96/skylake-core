@@ -103,6 +103,14 @@ public:
         return reinterpret_cast<const T*>(front());
     }
     template <typename T>
+    [[nodiscard]] T* cast_unsafe() noexcept {
+        return reinterpret_cast<T*>(front());
+    }
+    template <typename T>
+    [[nodiscard]] const T* cast_unsafe() const noexcept {
+        return reinterpret_cast<const T*>(front());
+    }
+    template <typename T>
     [[nodiscard]] T& cast_ref() noexcept {
         SKL_ASSERT(sizeof(T) <= remaining());
         return *reinterpret_cast<T*>(front());
