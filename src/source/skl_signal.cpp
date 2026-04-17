@@ -22,6 +22,7 @@ __sighandler_t                         g_original_SIGILL;                       
 __sighandler_t                         g_original_SIGSEGV;                      //!<
 __sighandler_t                         g_original_SIGINT;                       //!<
 __sighandler_t                         g_original_SIGTERM;                      //!<
+__sighandler_t                         g_original_SIGHUP;                       //!<
 std::relaxed_value<bool>               g_program_epilog_init{false};            //!<
 std::relaxed_value<bool>               g_exit_handler_called{false};            //!<
 std::relaxed_value<bool>               g_abnormal_exit_handler_called{false};   //!<
@@ -69,6 +70,7 @@ sigset_t _block_handled_signals() noexcept {
     sigaddset(&block_set, SIGSEGV);
     sigaddset(&block_set, SIGINT);
     sigaddset(&block_set, SIGTERM);
+    sigaddset(&block_set, SIGHUP);
     (void)sigprocmask(SIG_BLOCK, &block_set, &old_set);
     return old_set;
 }
@@ -97,6 +99,13 @@ void _call_original_termination_handler(int f_signal) noexcept {
             {
                 if (_is_callable_handler(g_original_SIGTERM)) {
                     g_original_SIGTERM(f_signal);
+                }
+            }
+            break;
+        case SIGHUP:
+            {
+                if (_is_callable_handler(g_original_SIGHUP)) {
+                    g_original_SIGHUP(f_signal);
                 }
             }
             break;
@@ -162,8 +171,9 @@ skl_status init_program_epilog() noexcept {
     //Register termination request handlers
     g_original_SIGINT  = ::signal(SIGINT, &_termination_request_handler);  //Interrupt signal (CTRL + C)
     g_original_SIGTERM = ::signal(SIGTERM, &_termination_request_handler); //Termination request
+    g_original_SIGHUP  = ::signal(SIGHUP, &_termination_request_handler);  //Hangup (used by stop scripts)
 
-    if (SIG_ERR == g_original_SIGINT || SIG_ERR == g_original_SIGTERM) {
+    if (SIG_ERR == g_original_SIGINT || SIG_ERR == g_original_SIGTERM || SIG_ERR == g_original_SIGHUP) {
         return SKL_ERR_FAIL;
     }
 
