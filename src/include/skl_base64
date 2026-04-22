@@ -1,0 +1,403 @@
+//!
+//! \file skl_base64
+//!
+//! \brief Base64 encode/decode utilities (header-only, constexpr-friendly)
+//!
+//! \remark Supports both the RFC 4648 \S 4 standard alphabet and the \S 5 url-safe alphabet.
+//! \remark All routines are constexpr; compile-time wrappers return a value type whose
+//!         size is known from the input size so the result is usable as a constant expression.
+//! \remark No std dependencies.
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+#include "skl_string_view"
+
+namespace skl {
+//! Base64 alphabet variants
+enum class EBase64Alphabet : u8 {
+    Standard = 0U, //!< RFC 4648 \S 4 alphabet (A-Z a-z 0-9 + /)
+    UrlSafe  = 1U, //!< RFC 4648 \S 5 alphabet (A-Z a-z 0-9 - _)
+};
+
+//! [Const] Standard base64 alphabet (RFC 4648 \S 4)
+constexpr char CBase64StandardAlphabet[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+//! [Const] URL-safe base64 alphabet (RFC 4648 \S 5)
+constexpr char CBase64UrlSafeAlphabet[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+//! [Const] Base64 pad character
+constexpr char CBase64Pad = '=';
+
+//! [Const] Sentinel returned by base64_encode/base64_decode on failure
+constexpr u64 CBase64Error = static_cast<u64>(-1);
+
+//! [Compiletime] Size in chars of the base64 encoding of an \p f_input_size byte buffer
+//! \param f_input_size Input size in bytes
+//! \param f_padded     true for '=' padded output (size is always a multiple of 4)
+//! \return Number of chars required (excluding any null terminator)
+[[nodiscard]] constexpr u64 base64_encoded_size(u64 f_input_size, bool f_padded = true) noexcept {
+    if (f_padded) {
+        return ((f_input_size + 2U) / 3U) * 4U;
+    }
+    return ((f_input_size * 4U) + 2U) / 3U;
+}
+
+//! [Compiletime] Maximum possible decoded size in bytes for an \p f_input_size char base64 buffer
+//! \remark Handles both padded and unpadded inputs
+//! \note   Actual decoded size can be up to 2 bytes less than this upper bound when the input is padded
+[[nodiscard]] constexpr u64 base64_decoded_max_size(u64 f_input_size) noexcept {
+    const u64 full_groups = f_input_size / 4U;
+    const u64 rem         = f_input_size % 4U;
+    // rem == 0 -> 0; rem == 1 -> invalid (contributes 0); rem == 2 -> 1; rem == 3 -> 2
+    const u64 tail_bytes = (rem >= 2U) ? (rem - 1U) : 0U;
+    return (full_groups * 3U) + tail_bytes;
+}
+
+namespace base64_detail {
+    //! [Compiletime] Decode a single base64 char to its 6-bit sextet value
+    //! \remark Accepts both Standard ('+' '/') and UrlSafe ('-' '_') terminal chars
+    //! \return 0..63 on success, -1 on invalid char
+    [[nodiscard]] constexpr i8 char_to_sextet(char f_char) noexcept {
+        if ((f_char >= 'A') && (f_char <= 'Z')) {
+            return static_cast<i8>(f_char - 'A');
+        }
+        if ((f_char >= 'a') && (f_char <= 'z')) {
+            return static_cast<i8>((f_char - 'a') + 26);
+        }
+        if ((f_char >= '0') && (f_char <= '9')) {
+            return static_cast<i8>((f_char - '0') + 52);
+        }
+        if (('+' == f_char) || ('-' == f_char)) {
+            return static_cast<i8>(62);
+        }
+        if (('/' == f_char) || ('_' == f_char)) {
+            return static_cast<i8>(63);
+        }
+        return static_cast<i8>(-1);
+    }
+} // namespace base64_detail
+
+//! [Compiletime][Util] Encode raw bytes to base64
+//!
+//! \tparam _Alphabet Base64 alphabet variant
+//! \tparam _Pad      true to '=' pad the output to a multiple of 4 chars
+//! \tparam _ByteT    Input byte type (must be 1 byte wide: char, u8, byte)
+//!
+//! \param  f_input           Input byte buffer
+//! \param  f_input_size      Input size in bytes
+//! \param  f_output          Output char buffer (NOT null terminated by this function)
+//! \param  f_output_capacity Output buffer capacity in chars
+//!
+//! \return Number of chars written, or CBase64Error if \p f_output_capacity is insufficient
+template <EBase64Alphabet _Alphabet = EBase64Alphabet::Standard, bool _Pad = true, typename _ByteT = byte>
+    requires(sizeof(_ByteT) == 1U)
+[[nodiscard]] constexpr u64 base64_encode(const _ByteT* f_input, u64 f_input_size, char* f_output, u64 f_output_capacity) noexcept {
+    const u64 required = base64_encoded_size(f_input_size, _Pad);
+    if (f_output_capacity < required) {
+        return CBase64Error;
+    }
+
+    constexpr const char* CAlphabet = (EBase64Alphabet::UrlSafe == _Alphabet)
+                                          ? CBase64UrlSafeAlphabet
+                                          : CBase64StandardAlphabet;
+
+    u64 in_i  = 0U;
+    u64 out_j = 0U;
+
+    // Full 3 byte groups -> 4 chars
+    while ((in_i + 3U) <= f_input_size) {
+        const u32 b0 = static_cast<u32>(static_cast<u8>(f_input[in_i + 0U]));
+        const u32 b1 = static_cast<u32>(static_cast<u8>(f_input[in_i + 1U]));
+        const u32 b2 = static_cast<u32>(static_cast<u8>(f_input[in_i + 2U]));
+
+        f_output[out_j + 0U] = CAlphabet[(b0 >> 2U) & 0x3Fu];
+        f_output[out_j + 1U] = CAlphabet[((b0 << 4U) | (b1 >> 4U)) & 0x3Fu];
+        f_output[out_j + 2U] = CAlphabet[((b1 << 2U) | (b2 >> 6U)) & 0x3Fu];
+        f_output[out_j + 3U] = CAlphabet[b2 & 0x3Fu];
+
+        in_i  += 3U;
+        out_j += 4U;
+    }
+
+    const u64 remaining = f_input_size - in_i;
+    if (1U == remaining) {
+        const u32 b0 = static_cast<u32>(static_cast<u8>(f_input[in_i + 0U]));
+
+        f_output[out_j + 0U] = CAlphabet[(b0 >> 2U) & 0x3Fu];
+        f_output[out_j + 1U] = CAlphabet[(b0 << 4U) & 0x3Fu];
+        out_j += 2U;
+
+        if constexpr (_Pad) {
+            f_output[out_j + 0U] = CBase64Pad;
+            f_output[out_j + 1U] = CBase64Pad;
+            out_j += 2U;
+        }
+    } else if (2U == remaining) {
+        const u32 b0 = static_cast<u32>(static_cast<u8>(f_input[in_i + 0U]));
+        const u32 b1 = static_cast<u32>(static_cast<u8>(f_input[in_i + 1U]));
+
+        f_output[out_j + 0U] = CAlphabet[(b0 >> 2U) & 0x3Fu];
+        f_output[out_j + 1U] = CAlphabet[((b0 << 4U) | (b1 >> 4U)) & 0x3Fu];
+        f_output[out_j + 2U] = CAlphabet[(b1 << 2U) & 0x3Fu];
+        out_j += 3U;
+
+        if constexpr (_Pad) {
+            f_output[out_j + 0U] = CBase64Pad;
+            out_j += 1U;
+        }
+    }
+
+    return out_j;
+}
+
+//! [Compiletime][Util] Decode base64 chars to raw bytes
+//!
+//! \tparam _ByteT Output byte type (must be 1 byte wide: char, u8, byte)
+//!
+//! \param  f_input           Input base64 chars (may or may not be '=' padded)
+//! \param  f_input_size      Input size in chars
+//! \param  f_output          Output byte buffer
+//! \param  f_output_capacity Output buffer capacity in bytes
+//!
+//! \return Number of bytes written, or CBase64Error on invalid input / insufficient capacity
+template <typename _ByteT = byte>
+    requires(sizeof(_ByteT) == 1U)
+[[nodiscard]] constexpr u64 base64_decode(const char* f_input, u64 f_input_size, _ByteT* f_output, u64 f_output_capacity) noexcept {
+    // Trim trailing '=' padding from the effective input
+    u64 effective = f_input_size;
+    while ((0U < effective) && (CBase64Pad == f_input[effective - 1U])) {
+        --effective;
+    }
+
+    const u64 full_groups = effective / 4U;
+    const u64 tail        = effective - (full_groups * 4U);
+    if (1U == tail) {
+        // A single sextet cannot represent any byte
+        return CBase64Error;
+    }
+
+    u64 required = full_groups * 3U;
+    if (2U == tail) {
+        required += 1U;
+    } else if (3U == tail) {
+        required += 2U;
+    }
+    if (f_output_capacity < required) {
+        return CBase64Error;
+    }
+
+    u64 in_i  = 0U;
+    u64 out_j = 0U;
+
+    for (u64 g = 0U; g < full_groups; ++g) {
+        const i8 s0 = base64_detail::char_to_sextet(f_input[in_i + 0U]);
+        const i8 s1 = base64_detail::char_to_sextet(f_input[in_i + 1U]);
+        const i8 s2 = base64_detail::char_to_sextet(f_input[in_i + 2U]);
+        const i8 s3 = base64_detail::char_to_sextet(f_input[in_i + 3U]);
+        if ((s0 < 0) || (s1 < 0) || (s2 < 0) || (s3 < 0)) {
+            return CBase64Error;
+        }
+
+        const u32 v = (static_cast<u32>(s0) << 18U)
+                    | (static_cast<u32>(s1) << 12U)
+                    | (static_cast<u32>(s2) << 6U)
+                    | static_cast<u32>(s3);
+
+        f_output[out_j + 0U] = static_cast<_ByteT>((v >> 16U) & 0xFFu);
+        f_output[out_j + 1U] = static_cast<_ByteT>((v >> 8U) & 0xFFu);
+        f_output[out_j + 2U] = static_cast<_ByteT>(v & 0xFFu);
+
+        in_i  += 4U;
+        out_j += 3U;
+    }
+
+    if (2U == tail) {
+        const i8 s0 = base64_detail::char_to_sextet(f_input[in_i + 0U]);
+        const i8 s1 = base64_detail::char_to_sextet(f_input[in_i + 1U]);
+        if ((s0 < 0) || (s1 < 0)) {
+            return CBase64Error;
+        }
+        const u32 v = (static_cast<u32>(s0) << 18U) | (static_cast<u32>(s1) << 12U);
+        f_output[out_j + 0U] = static_cast<_ByteT>((v >> 16U) & 0xFFu);
+        out_j += 1U;
+    } else if (3U == tail) {
+        const i8 s0 = base64_detail::char_to_sextet(f_input[in_i + 0U]);
+        const i8 s1 = base64_detail::char_to_sextet(f_input[in_i + 1U]);
+        const i8 s2 = base64_detail::char_to_sextet(f_input[in_i + 2U]);
+        if ((s0 < 0) || (s1 < 0) || (s2 < 0)) {
+            return CBase64Error;
+        }
+        const u32 v = (static_cast<u32>(s0) << 18U)
+                    | (static_cast<u32>(s1) << 12U)
+                    | (static_cast<u32>(s2) << 6U);
+        f_output[out_j + 0U] = static_cast<_ByteT>((v >> 16U) & 0xFFu);
+        f_output[out_j + 1U] = static_cast<_ByteT>((v >> 8U) & 0xFFu);
+        out_j += 2U;
+    }
+
+    return out_j;
+}
+
+//! [Compiletime] Owning, null-terminated base64 encoded result
+//! \tparam _N Number of encoded chars (excluding null terminator)
+template <u64 _N>
+struct base64_encoded_t {
+    static constexpr u64 CCapacity = _N;
+
+    char m_data[_N + 1U]; //!< Encoded chars, m_data[m_length] == '\0'
+    u64  m_length;        //!< Number of valid chars in m_data
+
+    [[nodiscard]] constexpr const char* c_str() const noexcept { return m_data; }
+    [[nodiscard]] constexpr u64         size() const noexcept { return m_length; }
+};
+
+//! [Compiletime] Owning base64 decoded result
+//! \tparam _N Maximum decoded size in bytes
+template <u64 _N>
+struct base64_decoded_t {
+    static constexpr u64 CCapacity = _N;
+
+    byte m_data[_N + 1U]; //!< Decoded bytes (only first m_length are valid); +1 so _N == 0 is well formed
+    u64  m_length;        //!< Number of valid bytes in m_data, or CBase64Error on failure
+
+    [[nodiscard]] constexpr const byte* data() const noexcept { return m_data; }
+    [[nodiscard]] constexpr u64         size() const noexcept { return m_length; }
+    [[nodiscard]] constexpr bool        is_valid() const noexcept { return CBase64Error != m_length; }
+};
+
+//! [Compiletime][Util] Encode a byte array to base64 (output size derived from \p _N)
+//! \tparam _N        Input byte array size
+//! \tparam _Alphabet Base64 alphabet variant
+//! \tparam _Pad      true to '=' pad the output
+template <u64 _N, EBase64Alphabet _Alphabet = EBase64Alphabet::Standard, bool _Pad = true>
+[[nodiscard]] constexpr auto base64_encode_c(const byte (&f_input)[_N]) noexcept {
+    constexpr u64             COutLen = base64_encoded_size(_N, _Pad);
+    base64_encoded_t<COutLen> result{};
+    result.m_length = base64_encode<_Alphabet, _Pad, byte>(f_input, _N, result.m_data, COutLen);
+    result.m_data[result.m_length] = '\0';
+    return result;
+}
+
+//! [Compiletime][Util] Encode a C-string literal to base64 (the trailing '\0' is excluded)
+//! \tparam _N        Literal size including the trailing '\0'
+//! \tparam _Alphabet Base64 alphabet variant
+//! \tparam _Pad      true to '=' pad the output
+//!
+//! \par Example
+//! \code
+//!     constexpr auto e = skl::base64_encode_str_c("hello");
+//!     static_assert(e.size() == 8U);
+//!     // e.c_str() == "aGVsbG8="
+//! \endcode
+template <u64 _N, EBase64Alphabet _Alphabet = EBase64Alphabet::Standard, bool _Pad = true>
+[[nodiscard]] constexpr auto base64_encode_str_c(const char (&f_input)[_N]) noexcept {
+    constexpr u64             CInLen  = (_N > 0U) ? (_N - 1U) : 0U; // exclude '\0'
+    constexpr u64             COutLen = base64_encoded_size(CInLen, _Pad);
+    base64_encoded_t<COutLen> result{};
+    result.m_length = base64_encode<_Alphabet, _Pad, char>(f_input, CInLen, result.m_data, COutLen);
+    result.m_data[result.m_length] = '\0';
+    return result;
+}
+
+//! [Compiletime][Util] Decode a C-string literal from base64 (the trailing '\0' is excluded)
+//! \tparam _N Literal size including the trailing '\0'
+//!
+//! \par Example
+//! \code
+//!     constexpr auto d = skl::base64_decode_str_c("aGVsbG8=");
+//!     static_assert(d.is_valid());
+//!     static_assert(d.size() == 5U);
+//!     static_assert(d.data()[0] == 'h');
+//! \endcode
+template <u64 _N>
+[[nodiscard]] constexpr auto base64_decode_str_c(const char (&f_input)[_N]) noexcept {
+    constexpr u64             CInLen  = (_N > 0U) ? (_N - 1U) : 0U; // exclude '\0'
+    constexpr u64             COutMax = base64_decoded_max_size(CInLen);
+    base64_decoded_t<COutMax> result{};
+    result.m_length = base64_decode<byte>(f_input, CInLen, result.m_data, COutMax);
+    return result;
+}
+
+//! [Const] Size of the thread-local base64 UTF-8 scratch pad (in chars)
+constexpr u64 CBase64TlsScratchSize = 8192U;
+
+//! [Const] Maximum raw input size (in bytes) whose padded base64 encoding fits in the TLS scratch pad
+constexpr u64 CBase64TlsMaxInputSize = (CBase64TlsScratchSize / 4U) * 3U;
+
+//! [Util][ThreadLocal] Get a view of the thread-local base64 UTF-8 scratch pad
+//! \remark The returned view is valid until the next call to any skl::base64_encode_tls overload on the same thread
+[[nodiscard]] skl_string_view base64_tls_scratch() noexcept;
+
+//! [Util][ThreadLocal] Encode raw bytes to base64 into an 8KB thread-local UTF-8 scratch pad
+//!
+//! \remark The returned view points into a thread-local buffer; its contents remain valid until
+//!         the next call to any skl::base64_encode_tls overload on the same thread.
+//! \remark Returns an empty view when the encoded output would exceed CBase64TlsScratchSize
+//!         (max input is CBase64TlsMaxInputSize bytes for the padded variant).
+//! \remark The output is always plain ASCII which is a valid subset of UTF-8.
+//!
+//! \param f_input      Input byte buffer
+//! \param f_input_size Input size in bytes
+//! \param f_alphabet   Base64 alphabet variant
+//! \param f_padded     true to '=' pad the output
+//!
+//! \return View into the scratch pad on success, empty view on failure
+[[nodiscard]] skl_string_view base64_encode_tls(const byte* f_input, u64 f_input_size, EBase64Alphabet f_alphabet = EBase64Alphabet::Standard, bool f_padded = true) noexcept;
+
+//! \copydoc base64_encode_tls(const byte*, u64, EBase64Alphabet, bool)
+[[nodiscard]] skl_string_view base64_encode_tls(const char* f_input, u64 f_input_size, EBase64Alphabet f_alphabet = EBase64Alphabet::Standard, bool f_padded = true) noexcept;
+
+namespace base64_detail {
+    //! [Internal][ThreadLocal] Writable pointer to the base64 TLS scratch pad (capacity == CBase64TlsScratchSize)
+    [[nodiscard]] char* tls_scratch_ptr() noexcept;
+
+    //! [Internal][ThreadLocal] Record the length of the content currently in the TLS scratch pad
+    void tls_scratch_set_length(u64 f_length) noexcept;
+} // namespace base64_detail
+
+//! [Util][ThreadLocal] Encode raw bytes to base64 into the 8KB thread-local UTF-8 scratch pad
+//!
+//! \tparam _Alphabet Base64 alphabet variant (compile-time)
+//! \tparam _Pad      true to '=' pad the output (compile-time)
+//!
+//! \remark Same semantics as the non-template \ref base64_encode_tls overload, but the alphabet/pad
+//!         choice is resolved at compile time via \c if \c constexpr so the call inlines to a single
+//!         \c base64_encode template instantiation with no runtime dispatch.
+//! \remark Call as \c base64_encode_tls<alphabet,pad>(...) to select the template; a call with no
+//!         explicit template args selects the non-template runtime variant (by overload resolution).
+template <EBase64Alphabet _Alphabet = EBase64Alphabet::Standard, bool _Pad = true>
+[[nodiscard]] inline skl_string_view base64_encode_tls(const byte* f_input, u64 f_input_size) noexcept {
+    char* const scratch = base64_detail::tls_scratch_ptr();
+    u64         written = CBase64Error;
+
+    if constexpr (EBase64Alphabet::UrlSafe == _Alphabet) {
+        if constexpr (_Pad) {
+            written = base64_encode<EBase64Alphabet::UrlSafe, true, byte>(f_input, f_input_size, scratch, CBase64TlsScratchSize);
+        } else {
+            written = base64_encode<EBase64Alphabet::UrlSafe, false, byte>(f_input, f_input_size, scratch, CBase64TlsScratchSize);
+        }
+    } else {
+        if constexpr (_Pad) {
+            written = base64_encode<EBase64Alphabet::Standard, true, byte>(f_input, f_input_size, scratch, CBase64TlsScratchSize);
+        } else {
+            written = base64_encode<EBase64Alphabet::Standard, false, byte>(f_input, f_input_size, scratch, CBase64TlsScratchSize);
+        }
+    }
+
+    if (CBase64Error == written) {
+        base64_detail::tls_scratch_set_length(0U);
+        return skl_string_view{};
+    }
+    base64_detail::tls_scratch_set_length(written);
+    return skl_string_view::exact(scratch, written);
+}
+
+//! \copydoc base64_encode_tls(const byte*, u64)
+template <EBase64Alphabet _Alphabet = EBase64Alphabet::Standard, bool _Pad = true>
+[[nodiscard]] inline skl_string_view base64_encode_tls(const char* f_input, u64 f_input_size) noexcept {
+    return base64_encode_tls<_Alphabet, _Pad>(reinterpret_cast<const byte*>(f_input), f_input_size);
+}
+} // namespace skl
