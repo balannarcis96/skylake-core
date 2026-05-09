@@ -212,13 +212,7 @@ public:
 
     //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
     //! \remark Asserts that \p f_source_size fits in the remaining()
-    void write_unsafe(const byte* f_source, u32 f_source_size) noexcept;
-
-    //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
-    //! \remark Asserts that \p f_source_size fits in the remaining()
-    void write_unsafe(const char* f_source, u32 f_source_size) noexcept {
-        write_unsafe(reinterpret_cast<const byte*>(f_source), f_source_size);
-    }
+    void write_unsafe(const void* f_source, u32 f_source_size) noexcept;
 
     //! Copy \p f_source_size bytes from \p f_source into the internal buffer starting at the current position
     //! \remark Asserts that \p f_source_size fits in the remaining()
@@ -231,7 +225,7 @@ public:
     //! \remark Asserts that \p f_source_size fits in the remaining()
     template <u32 _N>
     void write_unsafe(const char (&f_source)[_N]) noexcept {
-        write_unsafe(reinterpret_cast<const byte*>(f_source), _N);
+        write_unsafe(f_source, _N);
     }
 
     //! Write value into the buffer

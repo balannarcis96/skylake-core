@@ -94,7 +94,7 @@ bool skl_stream::write(const byte* f_source, u32 f_source_size) noexcept {
     return false;
 }
 
-void skl_stream::write_unsafe(const byte* f_source, u32 f_source_size) noexcept {
+void skl_stream::write_unsafe(const void* f_source, u32 f_source_size) noexcept {
     SKL_ASSERT(nullptr != f_source);
     SKL_ASSERT(0U < f_source_size);
     SKL_ASSERT(nullptr != buffer());
