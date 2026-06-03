@@ -31,6 +31,25 @@ struct skl_fail {
     skl_status_raw m_error_status{SKL_ERR_FAIL};
 };
 
+struct skl_success {
+    constexpr skl_success() noexcept = default;
+
+    explicit skl_success(skl_status_raw f_success_status) noexcept
+        : m_success_status(f_success_status) { }
+
+    ~skl_success() noexcept                              = default;
+    skl_success(const skl_success&) noexcept            = default;
+    skl_success& operator=(const skl_success&) noexcept = default;
+    skl_success(skl_success&&) noexcept                 = default;
+    skl_success& operator=(skl_success&&) noexcept      = default;
+
+    explicit operator skl_status_raw() const noexcept {
+        return m_success_status;
+    }
+
+    skl_status_raw m_success_status{SKL_SUCCESS};
+};
+
 template <typename _Data>
 class [[nodiscard]] skl_result {
     static_assert(sizeof(_Data) > 0U, "If no data is required, use skl_status");
@@ -43,6 +62,13 @@ public:
     constexpr skl_result(skl_fail f_error) noexcept
         : m_status(f_error.m_error_status) {
         SKL_ASSERT_CRITICAL(f_error.m_error_status < 0);
+    }
+
+    //Success construct data with specific status
+    template <typename... _Args>
+    constexpr skl_result(skl_success f_status, _Args... f_args) noexcept
+        : m_status(f_status.m_success_status) {
+        construct_data(skl::skl_fwd<_Args>(f_args)...);
     }
 
     //Success construct data
