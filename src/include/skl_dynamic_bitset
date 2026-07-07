@@ -11,6 +11,7 @@
 
 #include "skl_int"
 #include "skl_result"
+#include "skl_stream"
 #include "skl_vector_if"
 #include "skl_utility"
 #include "skl_traits/conditional_t"
@@ -426,6 +427,31 @@ public:
         m_size = 0u;
         if constexpr (_EnableCounting) {
             m_count = 0u;
+        }
+    }
+
+    //! Serialize the bitset to a stream
+    void serialize(skl_stream& f_stream) const noexcept {
+        const u32 slice_count = slices_count();
+        f_stream.write_unsafe(&m_size, sizeof(m_size));
+        f_stream.write_unsafe(&slice_count, sizeof(slice_count));
+        if (slice_count > 0u) {
+            f_stream.write_unsafe(m_slices.data(), slice_count * u32(sizeof(slice_t)));
+        }
+    }
+
+    //! Deserialize the bitset from a stream
+    void deserialize(skl_stream& f_stream) noexcept {
+        m_size                = f_stream.read<u32>();
+        const u32 slice_count = f_stream.read<u32>();
+
+        m_slices.upgrade().resize(slice_count);
+        if (slice_count > 0u) {
+            SKL_ASSERT_PERMANENT(f_stream.read(reinterpret_cast<byte*>(m_slices.data()), slice_count * u32(sizeof(slice_t))));
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = count();
         }
     }
 

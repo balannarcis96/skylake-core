@@ -8,6 +8,7 @@
 #include "skl_int"
 #include "skl_assert"
 #include "skl_utility"
+#include "skl_stream"
 #include "skl_traits/conditional_t"
 
 namespace skl {
@@ -96,6 +97,19 @@ public:
         // Initialize size
         if constexpr (_EnableCounting && _DefaultBitValue) {
             m_count = CSize;
+        }
+    }
+
+    //! Serialize the bitset to a stream
+    void serialize(skl_stream& f_stream) const noexcept {
+        f_stream.write_unsafe(m_slices, sizeof(m_slices));
+    }
+
+    //! Deserialize the bitset from a stream
+    void deserialize(skl_stream& f_stream) noexcept {
+        SKL_ASSERT_PERMANENT(f_stream.read(reinterpret_cast<byte*>(m_slices), sizeof(m_slices)));
+        if constexpr (_EnableCounting) {
+            m_count = count();
         }
     }
 
