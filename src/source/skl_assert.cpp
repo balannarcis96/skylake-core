@@ -13,9 +13,9 @@ namespace skl {
 extern "C" void abort(void) noexcept __attribute__((__noreturn__));
 extern "C" int  snprintf(char* __restrict __s, unsigned long __maxlen, const char* __restrict __format, ...) noexcept __attribute__((__format__(__printf__, 3, 4)));
 extern "C" int  puts(const char* __s);
-extern "C" int  open(const char* __file, int __oflag, ...) noexcept;
-extern "C" long read(int __fd, void* __buf, unsigned long __nbytes) noexcept;
-extern "C" int  close(int __fd) noexcept;
+extern "C" int  open(const char* __file, int __oflag, ...);
+extern "C" long read(int __fd, void* __buf, unsigned long __nbytes);
+extern "C" int  close(int __fd);
 
 namespace {
 thread_local char g_assert_message_buffer[4098U];
