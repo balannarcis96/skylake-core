@@ -21,8 +21,8 @@ template <bool _DefaultBitValue = false, bool _EnableCounting = false, u64 _Alig
 class DynamicBitSet {
     //! Type of an empty struct (used when a type is not needed)
     struct bitset_empty_t {
-        bitset_empty_t() noexcept = default;
-        bitset_empty_t(u32) noexcept { }
+        constexpr bitset_empty_t() noexcept = default;
+        constexpr bitset_empty_t(u32) noexcept { }
     };
 
 public:
@@ -65,6 +65,8 @@ public:
             slice = CDefaultSliceValue;
         }
 
+        clear_padding_bits();
+
         // Initialize size
         if constexpr (_EnableCounting && _DefaultBitValue) {
             m_count = f_bit_size;
@@ -81,27 +83,7 @@ public:
         if constexpr (_EnableCounting) {
             return m_count;
         } else {
-            const auto slice_count       = m_slices.size();
-            const auto CLeftOverBits     = slice_t(m_size & CBitSizeOfSliceMask);
-            const auto CLeftOverBitsMask = (slice_t(slice_t(1u) << CLeftOverBits) - 1u);
-
-            slice_t set_count = 0u;
-            if (CLeftOverBits > 0u) {
-                for (u32 i = 0u; i < slice_count; ++i) {
-                    const auto is_last = (i == (slice_count - 1u));
-                    if (is_last) {
-                        set_count += __builtin_popcountl(slice_t(m_slices[i] & CLeftOverBitsMask));
-                    } else {
-                        set_count += __builtin_popcountl(slice_t(m_slices[i]));
-                    }
-                }
-            } else {
-                for (const auto slice : m_slices) {
-                    set_count += __builtin_popcountl(slice);
-                }
-            }
-
-            return set_count;
+            return count_bits();
         }
     }
 
@@ -213,7 +195,7 @@ public:
     }
 
     //! Get the number of bits in the bitset
-    [[nodiscard]] constexpr u32 size() noexcept {
+    [[nodiscard]] constexpr u32 size() const noexcept {
         return m_size;
     }
 
@@ -232,7 +214,7 @@ public:
         const auto mask      = slice_t(1u) << bit_index;
         const auto old_value = (slice & mask) != 0u;
         if constexpr (_EnableCounting) {
-            m_count += slice_t(false == old_value);
+            m_count += u32(false == old_value);
         }
         slice |= mask;
 
@@ -254,7 +236,7 @@ public:
         const auto mask      = slice_t(1u) << bit_index;
         const auto old_value = (slice & mask) != 0u;
         if constexpr (_EnableCounting) {
-            m_count -= slice_t(old_value);
+            m_count -= u32(old_value);
         }
         slice &= ~mask;
 
@@ -281,6 +263,8 @@ public:
             slice = CDefaultSliceValue;
         }
 
+        clear_padding_bits();
+
         if constexpr (_EnableCounting) {
             if constexpr (_DefaultBitValue) {
                 m_count = m_size;
@@ -296,8 +280,10 @@ public:
             slice = ~slice;
         }
 
+        clear_padding_bits();
+
         if constexpr (_EnableCounting) {
-            m_count = slice_t(m_size) - m_count;
+            m_count = u32(m_size - m_count);
         }
     }
 
@@ -309,8 +295,10 @@ public:
             slice = CValue;
         }
 
+        clear_padding_bits();
+
         if constexpr (_EnableCounting) {
-            m_count = slice_t(_Value ? m_size : 0u);
+            m_count = u32(_Value ? m_size : 0u);
         }
     }
 
@@ -321,19 +309,383 @@ public:
             slice = value;
         }
 
+        clear_padding_bits();
+
         if constexpr (_EnableCounting) {
-            m_count = slice_t(f_value ? m_size : 0u);
+            m_count = u32(f_value ? m_size : 0u);
         }
     }
 
     //! Get the slice at \p f_index
     [[nodiscard]] constexpr slice_t& slice(u32 f_index) noexcept {
+        SKL_ASSERT(f_index < slices_count());
         return m_slices[f_index];
     }
 
     //! Get the slice at \p f_index
     [[nodiscard]] constexpr const slice_t& slice(u32 f_index) const noexcept {
+        SKL_ASSERT(f_index < slices_count());
         return m_slices[f_index];
+    }
+
+    //! Are all the bits of this bitset equal to the bits of \p f_other
+    [[nodiscard]] constexpr bool operator==(const DynamicBitSet& f_other) const noexcept {
+        if (m_size != f_other.m_size) {
+            return false;
+        }
+
+        const u32 slice_count = slices_count();
+        if (slice_count != f_other.slices_count()) {
+            return false;
+        }
+
+        for (u32 i = 0u; i < slice_count; ++i) {
+            if (m_slices[i] != f_other.m_slices[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Compare this bitset with \p f_other, first by size then as if both were big unsigned integers
+    //! \return Negative if this is smaller, 0 if equal, positive if this is greater
+    [[nodiscard]] constexpr i32 compare(const DynamicBitSet& f_other) const noexcept {
+        if (m_size != f_other.m_size) {
+            return (m_size < f_other.m_size) ? -1 : 1;
+        }
+
+        const u32 slice_count = slices_count();
+        if (slice_count != f_other.slices_count()) {
+            return (slice_count < f_other.slices_count()) ? -1 : 1;
+        }
+
+        // Walk the slices from the most significant one to the least significant one
+        for (u32 i = slice_count; i > 0u; --i) {
+            const auto index = i - 1u;
+            if (m_slices[index] != f_other.m_slices[index]) {
+                return (m_slices[index] < f_other.m_slices[index]) ? -1 : 1;
+            }
+        }
+
+        return 0;
+    }
+
+    [[nodiscard]] constexpr bool operator<(const DynamicBitSet& f_other) const noexcept {
+        return compare(f_other) < 0;
+    }
+
+    [[nodiscard]] constexpr bool operator>(const DynamicBitSet& f_other) const noexcept {
+        return compare(f_other) > 0;
+    }
+
+    [[nodiscard]] constexpr bool operator<=(const DynamicBitSet& f_other) const noexcept {
+        return compare(f_other) <= 0;
+    }
+
+    [[nodiscard]] constexpr bool operator>=(const DynamicBitSet& f_other) const noexcept {
+        return compare(f_other) >= 0;
+    }
+
+    //! Compute a 64bit hash of the bits (the size is part of the hash)
+    [[nodiscard]] constexpr u64 hash_u64() const noexcept {
+        const u32 slice_count = slices_count();
+
+        u64 hash = u64((CHashOffsetBasis ^ u64(m_size)) * CHashPrime);
+        for (u32 i = 0u; i < slice_count; ++i) {
+            hash = u64((hash ^ u64(m_slices[i])) * CHashPrime);
+        }
+
+        return hash;
+    }
+
+    //! Compute a 32bit hash of the bits (the size is part of the hash)
+    [[nodiscard]] constexpr u32 hash_u32() const noexcept {
+        const auto hash = hash_u64();
+        return u32(hash ^ (hash >> 32u));
+    }
+
+    //! Compute a 16bit hash of the bits (the size is part of the hash)
+    [[nodiscard]] constexpr u16 hash_u16() const noexcept {
+        const auto hash = hash_u32();
+        return u16(hash ^ (hash >> 16u));
+    }
+
+    //! Is at least one bit set
+    [[nodiscard]] constexpr bool any() const noexcept {
+        // The padding bits are always cleared, no masking needed
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            if (m_slices[i] != slice_t(0u)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Are all the bits cleared
+    [[nodiscard]] constexpr bool none() const noexcept {
+        return false == any();
+    }
+
+    //! Are all the bits set
+    [[nodiscard]] constexpr bool all() const noexcept {
+        const u32  slice_count  = slices_count();
+        const auto padding_mask = padding_bits_mask();
+
+        for (u32 i = 0u; i < slice_count; ++i) {
+            auto slice_value = m_slices[i];
+
+            // The padding bits are always cleared, ignore them
+            if (i == (slice_count - 1u)) {
+                slice_value |= padding_mask;
+            }
+
+            if (slice_value != slice_t(~slice_t(0u))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Flip the bit at \p f_index
+    //! \return The new value of the bit
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool flip(u32 f_index) noexcept {
+        if (test(f_index)) {
+            (void)unset(f_index);
+            return false;
+        }
+
+        (void)set(f_index);
+        return true;
+    }
+
+    //! Set the bit at \p f_index to \p f_value
+    //! \return True if the bit was previously set, false otherwise
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool assign(u32 f_index, bool f_value) noexcept {
+        return f_value ? set(f_index) : unset(f_index);
+    }
+
+    //! Get the index of the first bit = _Value at or after \p f_from
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_first_from(u32 f_from) const noexcept {
+        if (f_from >= m_size) {
+            return skl_fail{SKL_ERR_NOT_FOUND};
+        }
+
+        const u32 slice_count = slices_count();
+        const u32 start_slice = f_from / CBitSizeOfSlice;
+        const u32 start_bit   = f_from & CBitSizeOfSliceMask;
+
+        for (u32 i = start_slice; i < slice_count; ++i) {
+            // When hunting for a cleared bit, hunt for a set bit in the inverse
+            auto slice_value = _Value ? m_slices[i] : slice_t(~m_slices[i]);
+
+            // Skip the bits before the start bit
+            if (i == start_slice) {
+                slice_value &= slice_t(~slice_t(0u) << start_bit);
+            }
+
+            if (slice_value != slice_t(0u)) {
+                const u32 bit_index = u32((i * CBitSizeOfSlice) + u32(__builtin_ctzll(slice_value)));
+
+                // Only the padding bits of the last slice can land past the size
+                return (bit_index < m_size) ? skl_result<u32>{bit_index} : skl_result<u32>{skl_fail{SKL_ERR_NOT_FOUND}};
+            }
+        }
+
+        return skl_fail{SKL_ERR_NOT_FOUND};
+    }
+
+    //! Get the index of the last bit = _Value
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_last() const noexcept {
+        const auto padding_mask = padding_bits_mask();
+
+        for (u32 i = slices_count(); i > 0u; --i) {
+            const u32 index = i - 1u;
+
+            // When hunting for a cleared bit, hunt for a set bit in the inverse
+            auto slice_value = _Value ? m_slices[index] : slice_t(~m_slices[index]);
+
+            // Never report a padding bit
+            if (index == (slices_count() - 1u)) {
+                slice_value &= slice_t(~padding_mask);
+            }
+
+            if (slice_value != slice_t(0u)) {
+                const u32 highest_bit = 63u - u32(__builtin_clzll(slice_value));
+                return u32((index * CBitSizeOfSlice) + highest_bit);
+            }
+        }
+
+        return skl_fail{SKL_ERR_NOT_FOUND};
+    }
+
+    //! Call \p f_callback(u32 f_bit_index) for each set bit, from the lowest index to the highest
+    template <typename _Functor>
+    constexpr void for_each_set_bit(_Functor&& f_callback) const noexcept {
+        // The padding bits are always cleared, they can never be reported
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            auto slice_value = m_slices[i];
+            while (slice_value != slice_t(0u)) {
+                const u32 bit_index = u32(__builtin_ctzll(slice_value));
+                f_callback(u32((i * CBitSizeOfSlice) + bit_index));
+
+                // Clear the lowest set bit
+                slice_value &= slice_t(slice_value - 1u);
+            }
+        }
+    }
+
+    //! Does this bitset have at least one bit in common with \p f_other
+    //! \remark Asserts that both bitsets have the same size
+    [[nodiscard]] constexpr bool intersects(const DynamicBitSet& f_other) const noexcept {
+        SKL_ASSERT(m_size == f_other.m_size);
+
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            if ((m_slices[i] & f_other.m_slices[i]) != slice_t(0u)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Are all the bits set in this bitset also set in \p f_other
+    //! \remark Asserts that both bitsets have the same size
+    [[nodiscard]] constexpr bool is_subset_of(const DynamicBitSet& f_other) const noexcept {
+        SKL_ASSERT(m_size == f_other.m_size);
+
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            if ((m_slices[i] & ~f_other.m_slices[i]) != slice_t(0u)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Bitwise AND with \p f_other
+    //! \remark Asserts that both bitsets have the same size
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr DynamicBitSet& operator&=(const DynamicBitSet& f_other) noexcept {
+        SKL_ASSERT(m_size == f_other.m_size);
+
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            m_slices[i] &= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = u32(count_bits());
+        }
+
+        return *this;
+    }
+
+    //! Bitwise OR with \p f_other
+    //! \remark Asserts that both bitsets have the same size
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr DynamicBitSet& operator|=(const DynamicBitSet& f_other) noexcept {
+        SKL_ASSERT(m_size == f_other.m_size);
+
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            m_slices[i] |= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = u32(count_bits());
+        }
+
+        return *this;
+    }
+
+    //! Bitwise XOR with \p f_other
+    //! \remark Asserts that both bitsets have the same size
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr DynamicBitSet& operator^=(const DynamicBitSet& f_other) noexcept {
+        SKL_ASSERT(m_size == f_other.m_size);
+
+        const u32 slice_count = slices_count();
+        for (u32 i = 0u; i < slice_count; ++i) {
+            m_slices[i] ^= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = u32(count_bits());
+        }
+
+        return *this;
+    }
+
+    //! Swap the content of this bitset with \p f_other
+    void swap(DynamicBitSet& f_other) noexcept {
+        container_t slices{static_cast<container_t&&>(m_slices)};
+        m_slices         = static_cast<container_t&&>(f_other.m_slices);
+        f_other.m_slices = static_cast<container_t&&>(slices);
+
+        const auto size = m_size;
+        m_size          = f_other.m_size;
+        f_other.m_size  = size;
+
+        if constexpr (_EnableCounting) {
+            const auto count = m_count;
+            m_count          = f_other.m_count;
+            f_other.m_count  = count;
+        }
+    }
+
+    //! Reserve storage for at least \p f_bit_size bits (does not change the size)
+    void reserve(u32 f_bit_size) noexcept {
+        if (f_bit_size == 0u) {
+            return;
+        }
+
+        m_slices.upgrade().reserve(integral_ceil<u32>(f_bit_size, CBitSizeOfSlice));
+    }
+
+    //! Shrink the bitset to \p f_new_size, dropping every bit at or above it
+    //! \remark Does nothing if \p f_new_size is not smaller than the current size
+    void shrink(u32 f_new_size) noexcept {
+        if (f_new_size >= m_size) {
+            return;
+        }
+
+        if (f_new_size == 0u) {
+            clear();
+            return;
+        }
+
+        const auto new_slice_count = integral_ceil<u32>(f_new_size, CBitSizeOfSlice);
+        if (new_slice_count < slices_count()) {
+            m_slices.upgrade().resize(new_slice_count);
+        }
+
+        m_size = f_new_size;
+
+        clear_padding_bits();
+
+        if constexpr (_EnableCounting) {
+            m_count = u32(count_bits());
+        }
+    }
+
+    //! Resize the bitset to \p f_new_size, growing or shrinking as needed
+    void resize(u32 f_new_size) noexcept {
+        if (f_new_size > m_size) {
+            grow(f_new_size);
+        } else {
+            shrink(f_new_size);
+        }
     }
 
     //! Grow the bitset to the specified size
@@ -343,6 +695,9 @@ public:
         if (f_new_size <= m_size) {
             return;
         }
+
+        // The bits about to be exposed must start from the default value
+        clear_padding_bits();
 
         // Calculate new slice count
         const auto new_slice_count     = integral_ceil<u32>(f_new_size, CBitSizeOfSlice);
@@ -419,6 +774,8 @@ public:
 
         // Update size
         m_size = f_new_size;
+
+        clear_padding_bits();
     }
 
     //! Clear the bitset (removes all slices)
@@ -445,17 +802,68 @@ public:
         m_size                = f_stream.read<u32>();
         const u32 slice_count = f_stream.read<u32>();
 
+        // The slices must be able to hold all the bits (the stream is not trusted)
+        SKL_ASSERT_PERMANENT(u64(slice_count) * CBitSizeOfSlice >= u64(m_size));
+
         m_slices.upgrade().resize(slice_count);
         if (slice_count > 0u) {
             SKL_ASSERT_PERMANENT(f_stream.read(reinterpret_cast<byte*>(m_slices.data()), slice_count * u32(sizeof(slice_t))));
         }
 
+        clear_padding_bits();
+
         if constexpr (_EnableCounting) {
-            m_count = count();
+            m_count = u32(count_bits());
         }
     }
 
 private:
+    //! Count the set bits by inspecting the slices (ignores the cached counter)
+    [[nodiscard]] constexpr slice_t count_bits() const noexcept {
+        slice_t set_count = 0u;
+        for (const auto slice : m_slices) {
+            set_count += slice_t(__builtin_popcountll(slice));
+        }
+
+        return set_count;
+    }
+
+    //! Get the mask of the unused (padding) bits in the last slice (0 if none)
+    [[nodiscard]] constexpr slice_t padding_bits_mask() const noexcept {
+        const auto padding_count = padding_bits_count();
+        if (padding_count == 0u) {
+            return slice_t(0u);
+        }
+
+        return slice_t(~slice_t(slice_t(slice_t(1u) << (CBitSizeOfSlice - padding_count)) - 1u));
+    }
+
+    //! FNV-1a hash constants
+    static constexpr u64 CHashOffsetBasis = 14695981039346656037ull;
+    static constexpr u64 CHashPrime       = 1099511628211ull;
+
+    //! Get the number of unused (padding) bits in the last slice (0 if none)
+    [[nodiscard]] constexpr u64 padding_bits_count() const noexcept {
+        const auto total_bits = u64(m_slices.size()) * CBitSizeOfSlice;
+        SKL_ASSERT(total_bits >= u64(m_size));
+        return total_bits - u64(m_size);
+    }
+
+    //! Clear the unused (padding) bits in the last slice
+    //! \remark Keeps the raw slice data canonical so it can be safely compared, hashed, serialized or grown into
+    constexpr void clear_padding_bits() noexcept {
+        const auto padding_count = padding_bits_count();
+        if (padding_count == 0u) {
+            return;
+        }
+
+        // A slice can never be fully padding
+        SKL_ASSERT(padding_count < CBitSizeOfSlice);
+
+        const auto used_bits  = CBitSizeOfSlice - padding_count;
+        m_slices.back()      &= slice_t(slice_t(slice_t(1u) << used_bits) - 1u);
+    }
+
 #if SKL_BUILD_DEV
     [[nodiscard]] constexpr bool validate_bit_index(u32 f_index) const noexcept {
         const u32  slice_index   = f_index / CBitSizeOfSlice;
@@ -475,8 +883,16 @@ private:
 #endif
 
 private:
-    container_t m_slices;    //!< Slices of the bitset
-    u32         m_size{0u};  //!< Number of bits in the bitset
-    counter_t   m_count{0u}; //!< Count of set bits (only if counting is enabled)
+    container_t                     m_slices;    //!< Slices of the bitset
+    u32                             m_size{0u};  //!< Number of bits in the bitset
+    [[no_unique_address]] counter_t m_count{0u}; //!< Count of set bits (only if counting is enabled)
+};
+
+//! Hash functor for any DynamicBitSet
+struct dynamic_bitset_hash {
+    template <bool _DefaultBitValue, bool _EnableCounting, u64 _Alignment>
+    [[nodiscard]] static u64 operator()(const DynamicBitSet<_DefaultBitValue, _EnableCounting, _Alignment>& f_bitset) noexcept {
+        return f_bitset.hash_u64();
+    }
 };
 } // namespace skl

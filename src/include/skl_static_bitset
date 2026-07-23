@@ -9,7 +9,9 @@
 #include "skl_assert"
 #include "skl_utility"
 #include "skl_stream"
+#include "skl_result"
 #include "skl_traits/conditional_t"
+#include "skl_traits/same_as"
 
 namespace skl {
 //! A fixed size bitset
@@ -35,8 +37,8 @@ private:
 
     //! Type of an empty struct (used when a type is not needed)
     struct bitset_empty_t {
-        bitset_empty_t() noexcept = default;
-        bitset_empty_t(u32) noexcept { }
+        constexpr bitset_empty_t() noexcept = default;
+        constexpr bitset_empty_t(u32) noexcept { }
     };
 
 public:
@@ -71,10 +73,25 @@ public:
     //! Number of usable bits in the last slice (CBitSizeOfSlice if CSize is multiple of CBitSizeOfSlice)
     static constexpr slice_t CLastSliceUsableBits = CBitSizeOfSlice - CLeftOverBits;
 
+    //! Does the last slice contain unused (padding) bits
+    static constexpr bool CHasPaddingBits = CLeftOverBits > 0u;
+
     //! Mask for the left over bits in the last slice (0 if CSize is multiple of CBitSizeOfSlice)
     static constexpr slice_t CLeftOverBitsMask = (CLeftOverBits == 0u)
                                                    ? slice_t(0u)
                                                    : slice_t(slice_t(slice_t(slice_t(1u) << CLeftOverBits) - 1u) << (CBitSizeOfSlice - CLeftOverBits));
+
+    //! Word types accepted by the load api
+    template <typename _Word>
+    static constexpr bool CIsValidWord = same_as<_Word, u8> || same_as<_Word, u16> || same_as<_Word, u32> || same_as<_Word, u64>;
+
+    //! Number of _Word words needed to hold all the bits
+    template <typename _Word>
+        requires(CIsValidWord<_Word>)
+    static constexpr u64 CWordCountFor = integral_ceil<u64>(CSize, sizeof(_Word) * 8u);
+
+    //! Number of u64 words needed to hold all the bits
+    static constexpr u64 CU64WordCount = CWordCountFor<u64>;
 
     //! Default value for the bits (false = 0, true = 1)
     static constexpr bool CDefaultBitValue = _DefaultBitValue;
@@ -88,16 +105,209 @@ public:
     //! Counter type (only if counting is enabled)
     using counter_t = conditional_t<_EnableCounting, slice_t, bitset_empty_t>;
 
-    StaticBitSet() noexcept {
+    constexpr StaticBitSet() noexcept {
         // Initialize slices
         for (auto& slice : m_slices) {
             slice = CDefaultSliceValue;
+        }
+
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
         }
 
         // Initialize size
         if constexpr (_EnableCounting && _DefaultBitValue) {
             m_count = CSize;
         }
+    }
+
+    //! Construct from \p f_words_count words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Bits not covered by the source are set to the default bit value, bits past the size are ignored
+    //! \remark Reads at most CWordCountFor<_Word> words, any extra word is ignored
+    //! \remark Asserts that at least one word is given
+    template <typename _Word>
+        requires(CIsValidWord<_Word>)
+    constexpr StaticBitSet(const _Word* f_words, u32 f_words_count) noexcept {
+        // Every bit not covered by the source keeps the default value
+        for (auto& slice : m_slices) {
+            slice = CDefaultSliceValue;
+        }
+
+        load_from(f_words, f_words_count);
+    }
+
+    //! Construct from an array of words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Bits not covered by the source are set to the default bit value, bits past the size are ignored
+    //! \remark Reads at most CWordCountFor<_Word> words, any extra word is ignored
+    template <typename _Word, u32 _WordsCount>
+        requires(CIsValidWord<_Word> && (_WordsCount > 0u))
+    constexpr explicit StaticBitSet(const _Word (&f_words)[_WordsCount]) noexcept
+        : StaticBitSet(static_cast<const _Word*>(f_words), _WordsCount) { }
+
+    //! Load the bits from \p f_words_count words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Only the slices covered by the source are written, the rest are left untouched
+    //! \remark A slice only partially covered by the source is fully written, the missing words count as 0
+    //! \remark Reads at most CWordCountFor<_Word> words, any extra word is ignored, bits past the size are ignored
+    //! \remark Asserts that at least one word is given
+    template <typename _Word>
+        requires(CIsValidWord<_Word>)
+    constexpr void load_from(const _Word* f_words, u32 f_words_count) noexcept {
+        SKL_ASSERT(nullptr != f_words);
+        SKL_ASSERT(0u < f_words_count);
+
+        constexpr u64 CBitSizeOfWord = sizeof(_Word) * 8u;
+
+        // Read only the words needed to cover the slices, never more
+        const u32 words_count = u32(skl_min<u64>(f_words_count, CWordCountFor<_Word>));
+
+        if constexpr (CBitSizeOfWord >= CBitSizeOfSlice) {
+            // A word covers CSlicesPerWord whole slices, from the lowest bits up
+            constexpr u64 CSlicesPerWord = CBitSizeOfWord / CBitSizeOfSlice;
+
+            for (u32 i = 0u; i < words_count; ++i) {
+                const _Word word       = f_words[i];
+                const u32   base_slice = u32(u64(i) * CSlicesPerWord);
+
+                // The last word may cover less
+                const u32 slices_count = u32(skl_min<u64>(CSlicesPerWord, CSliceCount - base_slice));
+                for (u32 j = 0u; j < slices_count; ++j) {
+                    m_slices[base_slice + j] = slice_t(word >> (u64(j) * CBitSizeOfSlice));
+                }
+            }
+        } else {
+            // A slice is covered by CWordsPerSlice whole words, from the lowest bits up
+            constexpr u64 CWordsPerSlice = CBitSizeOfSlice / CBitSizeOfWord;
+
+            const u32 slices_count = u32(integral_ceil<u64>(words_count, CWordsPerSlice));
+            for (u32 i = 0u; i < slices_count; ++i) {
+                const u32 base_word = u32(u64(i) * CWordsPerSlice);
+
+                // The last slice may be covered only partially, the missing words count as 0
+                const u32 words_in_slice = u32(skl_min<u64>(CWordsPerSlice, words_count - base_word));
+
+                slice_t value = slice_t(0u);
+                for (u32 j = 0u; j < words_in_slice; ++j) {
+                    value |= slice_t(slice_t(f_words[base_word + j]) << (u64(j) * CBitSizeOfWord));
+                }
+
+                m_slices[i] = value;
+            }
+        }
+
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = count_bits();
+        }
+    }
+
+    //! Load the bits from an array of words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Only the slices covered by the source are written, the rest are left untouched
+    //! \remark A slice only partially covered by the source is fully written, the missing words count as 0
+    //! \remark Reads at most CWordCountFor<_Word> words, any extra word is ignored, bits past the size are ignored
+    template <typename _Word, u32 _WordsCount>
+        requires(CIsValidWord<_Word> && (_WordsCount > 0u))
+    constexpr void load_from(const _Word (&f_words)[_WordsCount]) noexcept {
+        load_from(static_cast<const _Word*>(f_words), _WordsCount);
+    }
+
+    //! Store the bits into \p f_words_count words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Writes at most CWordCountFor<_Word> meaningful words, every remaining word is cleared
+    //! \remark Bits past the size are stored as 0
+    //! \remark Asserts that at least one word is given
+    template <typename _Word>
+        requires(CIsValidWord<_Word>)
+    constexpr void store_to(_Word* f_words, u32 f_words_count) const noexcept {
+        SKL_ASSERT(nullptr != f_words);
+        SKL_ASSERT(0u < f_words_count);
+
+        constexpr u64 CBitSizeOfWord = sizeof(_Word) * 8u;
+
+        // Fill only the words the bitset can cover, never more
+        const u32 words_count = u32(skl_min<u64>(f_words_count, CWordCountFor<_Word>));
+
+        if constexpr (CBitSizeOfWord >= CBitSizeOfSlice) {
+            // A word gathers CSlicesPerWord whole slices, from the lowest bits up
+            constexpr u64 CSlicesPerWord = CBitSizeOfWord / CBitSizeOfSlice;
+
+            for (u32 i = 0u; i < words_count; ++i) {
+                const u32 base_slice = u32(u64(i) * CSlicesPerWord);
+
+                // The last word may gather less
+                const u32 slices_count = u32(skl_min<u64>(CSlicesPerWord, CSliceCount - base_slice));
+
+                _Word word = _Word(0u);
+                for (u32 j = 0u; j < slices_count; ++j) {
+                    word |= _Word(_Word(m_slices[base_slice + j]) << (u64(j) * CBitSizeOfSlice));
+                }
+
+                f_words[i] = word;
+            }
+        } else {
+            // A slice is split into CWordsPerSlice whole words, from the lowest bits up
+            constexpr u64 CWordsPerSlice = CBitSizeOfSlice / CBitSizeOfWord;
+
+            for (u32 i = 0u; i < words_count; ++i) {
+                const u32 slice_index = u32(u64(i) / CWordsPerSlice);
+                const u64 word_shift  = (u64(i) % CWordsPerSlice) * CBitSizeOfWord;
+
+                f_words[i] = _Word(m_slices[slice_index] >> word_shift);
+            }
+        }
+
+        // Every word the bitset does not cover is cleared
+        for (u32 i = words_count; i < f_words_count; ++i) {
+            f_words[i] = _Word(0u);
+        }
+    }
+
+    //! Store the bits into an array of words, the first word holds the lowest bits
+    //! \remark \p _Word can be any of u8, u16, u32, u64
+    //! \remark Writes at most CWordCountFor<_Word> meaningful words, every remaining word is cleared
+    template <typename _Word, u32 _WordsCount>
+        requires(CIsValidWord<_Word> && (_WordsCount > 0u))
+    constexpr void store_to(_Word (&f_words)[_WordsCount]) const noexcept {
+        store_to(static_cast<_Word*>(f_words), _WordsCount);
+    }
+
+    //! Get all the bits as a single u8 word
+    //! \remark Only available when every bit fits in one u8
+    [[nodiscard]] constexpr u8 to_uint8() const noexcept
+        requires(CWordCountFor<u8> == 1u)
+    {
+        // Everything fits in one word, so there can only be a single slice
+        return u8(m_slices[0]);
+    }
+
+    //! Get all the bits as a single u16 word
+    //! \remark Only available when every bit fits in one u16
+    [[nodiscard]] constexpr u16 to_uint16() const noexcept
+        requires(CWordCountFor<u16> == 1u)
+    {
+        return u16(m_slices[0]);
+    }
+
+    //! Get all the bits as a single u32 word
+    //! \remark Only available when every bit fits in one u32
+    [[nodiscard]] constexpr u32 to_uint32() const noexcept
+        requires(CWordCountFor<u32> == 1u)
+    {
+        return u32(m_slices[0]);
+    }
+
+    //! Get all the bits as a single u64 word
+    //! \remark Only available when every bit fits in one u64
+    [[nodiscard]] constexpr u64 to_uint64() const noexcept
+        requires(CWordCountFor<u64> == 1u)
+    {
+        return u64(m_slices[0]);
     }
 
     //! Serialize the bitset to a stream
@@ -108,8 +318,13 @@ public:
     //! Deserialize the bitset from a stream
     void deserialize(skl_stream& f_stream) noexcept {
         SKL_ASSERT_PERMANENT(f_stream.read(reinterpret_cast<byte*>(m_slices), sizeof(m_slices)));
+
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
+        }
+
         if constexpr (_EnableCounting) {
-            m_count = count();
+            m_count = count_bits();
         }
     }
 
@@ -118,22 +333,13 @@ public:
         if constexpr (_EnableCounting) {
             return m_count;
         } else {
-            slice_t set_count = 0u;
-            for (u32 i = 0u; i < CSliceCount; ++i) {
-                if constexpr (CLeftOverBits > 0u) {
-                    const auto is_last = (i == (CSliceCount - 1u));
-                    if (is_last) {
-                        set_count += __builtin_popcountl(slice_t(m_slices[i] & ~CLeftOverBitsMask));
-                    } else {
-                        set_count += __builtin_popcountl(slice_t(m_slices[i]));
-                    }
-                } else {
-                    set_count += __builtin_popcountl(slice_t(m_slices[i]));
-                }
-            }
-
-            return set_count;
+            return count_bits();
         }
+    }
+
+    //! Get the count of slices
+    [[nodiscard]] static constexpr u32 slices_count() noexcept {
+        return u32(CSliceCount);
     }
 
     //! Get the number of bits in the bitset
@@ -275,6 +481,10 @@ public:
             slice = CDefaultSliceValue;
         }
 
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
+        }
+
         if constexpr (_EnableCounting) {
             if constexpr (_DefaultBitValue) {
                 m_count = CSize;
@@ -290,6 +500,10 @@ public:
             slice = ~slice;
         }
 
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
+        }
+
         if constexpr (_EnableCounting) {
             m_count = slice_t(CSize) - m_count;
         }
@@ -303,6 +517,10 @@ public:
             slice = CValue;
         }
 
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
+        }
+
         if constexpr (_EnableCounting) {
             m_count = slice_t(_Value ? CSize : 0u);
         }
@@ -313,6 +531,10 @@ public:
         const slice_t value = f_value ? ~slice_t(0u) : slice_t(0u);
         for (auto& slice : m_slices) {
             slice = value;
+        }
+
+        if constexpr (CHasPaddingBits) {
+            clear_padding_bits();
         }
 
         if constexpr (_EnableCounting) {
@@ -346,8 +568,345 @@ public:
         return m_slices[_Index];
     }
 
+    //! Are all the bits of this bitset equal to the bits of \p f_other
+    [[nodiscard]] constexpr bool operator==(const StaticBitSet& f_other) const noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            if (m_slices[i] != f_other.m_slices[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Compare this bitset with \p f_other as if both were big unsigned integers
+    //! \return Negative if this is smaller, 0 if equal, positive if this is greater
+    [[nodiscard]] constexpr i32 compare(const StaticBitSet& f_other) const noexcept {
+        // Walk the slices from the most significant one to the least significant one
+        for (u32 i = CSliceCount; i > 0u; --i) {
+            const auto index = i - 1u;
+            if (m_slices[index] != f_other.m_slices[index]) {
+                return (m_slices[index] < f_other.m_slices[index]) ? -1 : 1;
+            }
+        }
+
+        return 0;
+    }
+
+    [[nodiscard]] constexpr bool operator<(const StaticBitSet& f_other) const noexcept {
+        return compare(f_other) < 0;
+    }
+
+    [[nodiscard]] constexpr bool operator>(const StaticBitSet& f_other) const noexcept {
+        return compare(f_other) > 0;
+    }
+
+    [[nodiscard]] constexpr bool operator<=(const StaticBitSet& f_other) const noexcept {
+        return compare(f_other) <= 0;
+    }
+
+    [[nodiscard]] constexpr bool operator>=(const StaticBitSet& f_other) const noexcept {
+        return compare(f_other) >= 0;
+    }
+
+    //! Compute a 64bit hash of the bits
+    [[nodiscard]] constexpr u64 hash_u64() const noexcept {
+        u64 hash = CHashOffsetBasis;
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            hash = u64((hash ^ u64(m_slices[i])) * CHashPrime);
+        }
+
+        return hash;
+    }
+
+    //! Compute a 32bit hash of the bits
+    [[nodiscard]] constexpr u32 hash_u32() const noexcept {
+        const auto hash = hash_u64();
+        return u32(hash ^ (hash >> 32u));
+    }
+
+    //! Compute a 16bit hash of the bits
+    [[nodiscard]] constexpr u16 hash_u16() const noexcept {
+        const auto hash = hash_u32();
+        return u16(hash ^ (hash >> 16u));
+    }
+
+    //! Is at least one bit set
+    [[nodiscard]] constexpr bool any() const noexcept {
+        // The padding bits are always cleared, no masking needed
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            if (m_slices[i] != slice_t(0u)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Are all the bits cleared
+    [[nodiscard]] constexpr bool none() const noexcept {
+        return false == any();
+    }
+
+    //! Are all the bits set
+    [[nodiscard]] constexpr bool all() const noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            auto slice_value = m_slices[i];
+
+            // The padding bits are always cleared, ignore them
+            if constexpr (CHasPaddingBits) {
+                if (i == (CSliceCount - 1u)) {
+                    slice_value |= CLeftOverBitsMask;
+                }
+            }
+
+            if (slice_value != slice_t(~slice_t(0u))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Flip the bit at \p _Index
+    //! \return The new value of the bit
+    template <u32 _Index>
+    constexpr bool flip() noexcept {
+        if (test<_Index>()) {
+            (void)unset<_Index>();
+            return false;
+        }
+
+        (void)set<_Index>();
+        return true;
+    }
+
+    //! Flip the bit at \p f_index
+    //! \return The new value of the bit
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool flip(u32 f_index) noexcept {
+        if (test(f_index)) {
+            (void)unset(f_index);
+            return false;
+        }
+
+        (void)set(f_index);
+        return true;
+    }
+
+    //! Set the bit at \p _Index to \p f_value
+    //! \return True if the bit was previously set, false otherwise
+    template <u32 _Index>
+    constexpr bool assign(bool f_value) noexcept {
+        return f_value ? set<_Index>() : unset<_Index>();
+    }
+
+    //! Set the bit at \p f_index to \p f_value
+    //! \return True if the bit was previously set, false otherwise
+    //! \remark Asserts that \p f_index is valid
+    constexpr bool assign(u32 f_index, bool f_value) noexcept {
+        return f_value ? set(f_index) : unset(f_index);
+    }
+
+    //! Get the index of the first bit = _Value
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_first() const noexcept {
+        return find_first_from<_Value>(0u);
+    }
+
+    //! Get the index of the first bit = _Value at or after \p f_from
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_first_from(u32 f_from) const noexcept {
+        if (f_from >= CSize) {
+            return skl_fail{SKL_ERR_NOT_FOUND};
+        }
+
+        const u32 start_slice = f_from / CBitSizeOfSlice;
+        const u32 start_bit   = f_from & CBitSizeOfSliceMask;
+
+        for (u32 i = start_slice; i < CSliceCount; ++i) {
+            // When hunting for a cleared bit, hunt for a set bit in the inverse
+            auto slice_value = _Value ? m_slices[i] : slice_t(~m_slices[i]);
+
+            // Skip the bits before the start bit
+            if (i == start_slice) {
+                slice_value &= slice_t(slice_t(~slice_t(0u)) << start_bit);
+            }
+
+            if (slice_value != slice_t(0u)) {
+                const u32 bit_index = u32((i * CBitSizeOfSlice) + u32(__builtin_ctzll(u64(slice_value))));
+
+                // Only the padding bits of the last slice can land past the size
+                return (bit_index < CSize) ? skl_result<u32>{bit_index} : skl_result<u32>{skl_fail{SKL_ERR_NOT_FOUND}};
+            }
+        }
+
+        return skl_fail{SKL_ERR_NOT_FOUND};
+    }
+
+    //! Get the index of the last bit = _Value
+    template <bool _Value>
+    [[nodiscard]] constexpr skl_result<u32> find_last() const noexcept {
+        for (u32 i = CSliceCount; i > 0u; --i) {
+            const u32 index = i - 1u;
+
+            // When hunting for a cleared bit, hunt for a set bit in the inverse
+            auto slice_value = _Value ? m_slices[index] : slice_t(~m_slices[index]);
+
+            // Never report a padding bit
+            if constexpr (CHasPaddingBits) {
+                if (index == (CSliceCount - 1u)) {
+                    slice_value &= slice_t(~CLeftOverBitsMask);
+                }
+            }
+
+            if (slice_value != slice_t(0u)) {
+                const u32 highest_bit = 63u - u32(__builtin_clzll(u64(slice_value)));
+                return u32((index * CBitSizeOfSlice) + highest_bit);
+            }
+        }
+
+        return skl_fail{SKL_ERR_NOT_FOUND};
+    }
+
+    //! Call \p f_callback(u32 f_bit_index) for each set bit, from the lowest index to the highest
+    template <typename _Functor>
+    constexpr void for_each_set_bit(_Functor&& f_callback) const noexcept {
+        // The padding bits are always cleared, they can never be reported
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            auto slice_value = u64(m_slices[i]);
+            while (slice_value != 0u) {
+                const u32 bit_index = u32(__builtin_ctzll(slice_value));
+                f_callback(u32((i * CBitSizeOfSlice) + bit_index));
+
+                // Clear the lowest set bit
+                slice_value &= (slice_value - 1u);
+            }
+        }
+    }
+
+    //! Does this bitset have at least one bit in common with \p f_other
+    [[nodiscard]] constexpr bool intersects(const StaticBitSet& f_other) const noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            if ((m_slices[i] & f_other.m_slices[i]) != slice_t(0u)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    //! Are all the bits set in this bitset also set in \p f_other
+    [[nodiscard]] constexpr bool is_subset_of(const StaticBitSet& f_other) const noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            if ((m_slices[i] & ~f_other.m_slices[i]) != slice_t(0u)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    //! Bitwise AND with \p f_other
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr StaticBitSet& operator&=(const StaticBitSet& f_other) noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            m_slices[i] &= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = count_bits();
+        }
+
+        return *this;
+    }
+
+    //! Bitwise OR with \p f_other
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr StaticBitSet& operator|=(const StaticBitSet& f_other) noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            m_slices[i] |= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = count_bits();
+        }
+
+        return *this;
+    }
+
+    //! Bitwise XOR with \p f_other
+    //! \remark The padding bits stay cleared, no masking needed
+    constexpr StaticBitSet& operator^=(const StaticBitSet& f_other) noexcept {
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            m_slices[i] ^= f_other.m_slices[i];
+        }
+
+        if constexpr (_EnableCounting) {
+            m_count = count_bits();
+        }
+
+        return *this;
+    }
+
+    [[nodiscard]] constexpr StaticBitSet operator&(const StaticBitSet& f_other) const noexcept {
+        StaticBitSet result{*this};
+        result &= f_other;
+        return result;
+    }
+
+    [[nodiscard]] constexpr StaticBitSet operator|(const StaticBitSet& f_other) const noexcept {
+        StaticBitSet result{*this};
+        result |= f_other;
+        return result;
+    }
+
+    [[nodiscard]] constexpr StaticBitSet operator^(const StaticBitSet& f_other) const noexcept {
+        StaticBitSet result{*this};
+        result ^= f_other;
+        return result;
+    }
+
+    //! Get a copy of this bitset with all the bits flipped
+    [[nodiscard]] constexpr StaticBitSet operator~() const noexcept {
+        StaticBitSet result{*this};
+        result.flip_all();
+        return result;
+    }
+
 private:
+    //! Count the set bits by inspecting the slices (ignores the cached counter)
+    [[nodiscard]] constexpr slice_t count_bits() const noexcept {
+        slice_t set_count = 0u;
+        for (u32 i = 0u; i < CSliceCount; ++i) {
+            set_count += slice_t(__builtin_popcountll(u64(m_slices[i])));
+        }
+
+        return set_count;
+    }
+
+    //! FNV-1a hash constants
+    static constexpr u64 CHashOffsetBasis = 14695981039346656037ull;
+    static constexpr u64 CHashPrime       = 1099511628211ull;
+
+    //! Clear the unused (padding) bits in the last slice
+    //! \remark Keeps the raw slice data canonical so it can be safely compared, hashed or serialized
+    //! \remark Callers must guard the call with `if constexpr (CHasPaddingBits)`
+    constexpr void clear_padding_bits() noexcept
+        requires(CHasPaddingBits)
+    {
+        m_slices[CSliceCount - 1u] &= slice_t(~CLeftOverBitsMask);
+    }
+
     container_t                     m_slices{};  //!< Slices of the bitset
     [[no_unique_address]] counter_t m_count{0u}; //!< Number of set bits (only if counting is enabled)
+};
+
+//! Hash functor for any StaticBitSet
+struct static_bitset_hash {
+    template <u64 _BitsCount, bool _DefaultBitValue, bool _EnableCounting>
+    [[nodiscard]] static u64 operator()(const StaticBitSet<_BitsCount, _DefaultBitValue, _EnableCounting>& f_bitset) noexcept {
+        return f_bitset.hash_u64();
+    }
 };
 } // namespace skl
