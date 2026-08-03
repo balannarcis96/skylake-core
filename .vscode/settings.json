@@ -167,6 +167,7 @@
         "std_flags": "cpp",
         "skl_huge_pages": "cpp",
         "skl_flags": "cpp",
+        "skl_secure_rand": "cpp",
         "huge_pages_allocator": "cpp",
         "hugepage_buffer_pool": "cpp",
         "same_as": "cpp",

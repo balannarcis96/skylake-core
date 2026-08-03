@@ -164,31 +164,33 @@ constexpr void copy_guid_raw(const GUID_raw_t in, GUID_raw_t out) noexcept {
     }
 }
 
-//! [LibInit][ThreadLocal] Generate a new random GUID
+//! [ThreadLocal] Generate a new random GUID
 //! \return A new GUID with all 16 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note High quality randomness, suitable for general use
+//! \note Drawn from the kernel CSPRNG through the thread local buffer (see skl_secure_rand)
+//! \note UNPREDICTABLE - the only variant safe for security bearing ids (session tokens,
+//!       capabilities, anything a third party presents back as proof of identity)
+//! \note ~28ns amortized. Use make_guid_fast() on hot paths where prediction is harmless
 [[nodiscard]] GUID make_guid() noexcept;
 
 //! [LibInit][ThreadLocal] Generate a new random GUID (fast)
 //! \return A new GUID with all 16 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note Faster than make_guid() but with slightly higher collision probability
-//! \note Uses 4x u32 random calls instead of 16x byte-range calls
+//! \note Uses thread-local SklRand (requires LibInit), 2x u64 draws, ~1.5ns
+//! \warning PREDICTABLE - SklRand is not a CSPRNG and its state is recoverable from enough
+//!          outputs. Never use this for security bearing ids, use make_guid()
 [[nodiscard]] GUID make_guid_fast() noexcept;
 
 //! Generate a new random GUID (global, non-thread-local)
 //! \return A new GUID with all 16 bytes randomized
-//! \note Creates a new SklRand instance on each call (slower than make_guid)
+//! \note Goes straight to getrandom(2) on every call (~365ns), prefer make_guid()
 //! \note Does not require thread-local initialization
-//! \note High quality randomness, suitable for general use
+//! \note UNPREDICTABLE, same guarantee as make_guid()
 [[nodiscard]] GUID g_make_guid() noexcept;
 
 //! Generate a new random GUID (global, non-thread-local, fast)
 //! \return A new GUID with all 16 bytes randomized
 //! \note Creates a new SklRand instance on each call (slower than make_guid_fast)
 //! \note Does not require thread-local initialization
-//! \note Faster than g_make_guid() but with slightly higher collision probability
+//! \warning PREDICTABLE, same caveat as make_guid_fast()
 [[nodiscard]] GUID g_make_guid_fast() noexcept;
 } // namespace skl
 

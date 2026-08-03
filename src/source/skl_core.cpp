@@ -32,6 +32,9 @@ namespace skl {
 skl_status skl_core_init_thread__rand() noexcept;
 skl_status skl_core_deinit_thread__rand() noexcept;
 
+//! \remark No matching deinit - the csprng state is static thread storage, nothing to free
+skl_status skl_core_init_thread__csprng() noexcept;
+
 void skl_core_deinit_thread__slog() noexcept;
 void skl_core_deinit_thread__slog_bend() noexcept;
 } // namespace skl
@@ -92,6 +95,11 @@ skl_status skl_core_init_thread() noexcept {
     }
 
     if (skl_core_init_thread__rand().is_failure()) {
+        return SKL_ERR_INIT_LOG;
+    }
+
+    //Seed the csprng here so that no thread ever issues a getrandom(2) at runtime
+    if (skl_core_init_thread__csprng().is_failure()) {
         return SKL_ERR_INIT_LOG;
     }
 

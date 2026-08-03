@@ -1,37 +1,65 @@
 //!
 //! \file skl_rand
 //!
-//! \brief very very fast, noise based rand api
+//! \brief very fast, noise based rand api
 //!
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
 #pragma once
+
+#include <tune_skl_core_public.h>
 
 #include "skl_int"
 #include "skl_assert"
 
 namespace skl {
 
-using rand_seed_t     = u32;
-using rand_position_t = u32;
+using rand_seed_t     = u64;
+using rand_position_t = u64;
 
 namespace skl_rand_internals {
-    //! [ThreadLocal] Get a random [0, u32_max] value
-    [[nodiscard]] u32 skl_rand(rand_position_t f_pos, rand_seed_t f_seed) noexcept;
+    //! Final avalanche stage
+    //! \remark bijective, full 64bit diffusion - every output bit depends on every input bit
+    [[nodiscard]] inline u64 skl_finalize(u64 f_value) noexcept {
+        //An even multiplier is not invertible mod 2^64, it would collapse the value space
+        static_assert(1ULL == (SklRandMul_MIX1 & 1ULL), "SklRandMul_MIX1 must be odd");
+        static_assert(1ULL == (SklRandMul_MIX2 & 1ULL), "SklRandMul_MIX2 must be odd");
 
-    //! [ThreadLocal] Get a random [0, u32_max] value based on f_x and f_y
-    [[nodiscard]] u32 skl_rand_2d(i32 f_x, i32 f_y, rand_seed_t f_seed) noexcept;
+        f_value ^= (f_value >> 30U);
+        f_value *= SklRandMul_MIX1;
+        f_value ^= (f_value >> 27U);
+        f_value *= SklRandMul_MIX2;
+        f_value ^= (f_value >> 31U);
 
-    //! [ThreadLocal] Get a random [0, u32_max] value based on f_x, f_y and f_z
-    [[nodiscard]] u32 skl_rand_3d(i32 f_x, i32 f_y, i32 f_z, rand_seed_t f_seed) noexcept;
+        return f_value;
+    }
+
+    //! Get a random [0, u64_max] value for the given position and seed
+    //! \remark bijective in f_pos, so the sequence has an exact 2^64 period with no repeats
+    //! \remark agrees with SklRand: skl_rand(n, s) is the n-th draw of a stream seeded with s
+    [[nodiscard]] u64 skl_rand(rand_position_t f_pos, rand_seed_t f_seed) noexcept;
+
+    //! Get a random [0, u64_max] value based on f_x and f_y
+    //! \remark the seed is explicit and MUST be thread independent, so that the same coordinate
+    //!         yields the same noise everywhere - never pass a per thread seed here
+    [[nodiscard]] u64 skl_rand_2d(i32 f_x, i32 f_y, rand_seed_t f_seed) noexcept;
+
+    //! Get a random [0, u64_max] value based on f_x, f_y and f_z
+    //! \remark see skl_rand_2d
+    [[nodiscard]] u64 skl_rand_3d(i32 f_x, i32 f_y, i32 f_z, rand_seed_t f_seed) noexcept;
 } // namespace skl_rand_internals
 
 //! Very fast, noise based RNG
-//! \remark cpu tick seed level resolution (epoch time based)
+//! \remark 8 byte state, so the thread local instance stays inside the tls slot itself
+//!         (skl_tls small buffer optimization) - no allocation and no indirection
+//! \remark exact 2^64 period, seeded from the kernel CSPRNG
+//! \warning NOT a cryptographic generator - the state is recoverable from enough outputs.
+//!          Never use this for security bearing values (session tokens, capabilities, any
+//!          nonce a third party presents back as proof of identity). Use a CSPRNG for those.
 class SklRand {
 public:
     SklRand() noexcept {
-        (void)new_seed();
+        new_seed();
     }
 
     SklRand(const SklRand&) noexcept            = default;
@@ -40,22 +68,25 @@ public:
     SklRand& operator=(SklRand&&) noexcept      = default;
     ~SklRand() noexcept                         = default;
 
-    //! Generate pseudo random value in interval [0, UINT32_MAX] (1d noise)
+    //! Generate pseudo random value in interval [0, UINT64_MAX]
+    [[nodiscard]] u64 next_u64() noexcept {
+        //An odd stride walks the state through all 2^64 values before repeating
+        static_assert(1ULL == (SklRandStride & 1ULL), "SklRandStride must be odd");
+
+        m_state += SklRandStride;
+        return skl_rand_internals::skl_finalize(m_state);
+    }
+
+    //! Generate pseudo random value in interval [0, UINT32_MAX]
+    //! \remark returns the high half of the 64bit noise - every bit of it depends on the
+    //!         entire state, which is not true of the low half
     [[nodiscard]] u32 next() noexcept {
-        return skl_rand_internals::skl_rand(pos(), m_seed);
-    }
-
-    //! Generate pseudo random value in interval [0, UINT32_MAX] (2d noise)
-    [[nodiscard]] u32 next_2d(i32 f_x, i32 f_y) const noexcept {
-        return skl_rand_internals::skl_rand_2d(f_x, f_y, m_seed);
-    }
-
-    //! Generate pseudo random value in interval [0, UINT32_MAX] (3d noise)
-    [[nodiscard]] u32 next_3d(i32 f_x, i32 f_y, i32 f_z) const noexcept {
-        return skl_rand_internals::skl_rand_3d(f_x, f_y, f_z, m_seed);
+        return static_cast<u32>(next_u64() >> 32U);
     }
 
     //! Generate pseudo random value in interval [f_min, f_max]
+    //! \remark Lemire multiply-shift: no division, no modulo bias, and it consumes the high
+    //!         bits of the noise (full state dependency)
     [[nodiscard]] u32 next_range(u32 f_min, u32 f_max) noexcept {
         SKL_ASSERT(f_min <= f_max);
 
@@ -63,33 +94,36 @@ public:
             return f_min;
         }
 
-        const u64 span        = static_cast<u64>(f_max) - static_cast<u64>(f_min);
-        const u32 raw_random  = skl_rand_internals::skl_rand(pos(), m_seed);
-        const u32 span_offset = static_cast<u32>(static_cast<u64>(raw_random) % (span + 1ULL));
+        const u64 span       = (static_cast<u64>(f_max) - static_cast<u64>(f_min)) + 1ULL;
+        const u64 raw_random = next_u64();
+
+        //Single mulx: the high 64 bits of the 128bit product land in [0, span)
+        const u64 span_offset = static_cast<u64>(
+            (static_cast<unsigned __int128>(raw_random) * static_cast<unsigned __int128>(span)) >> 64U);
 
         return static_cast<u32>(static_cast<u64>(f_min) + span_offset);
     }
 
-    //! Generate pseudo random value in interval (0.0f, 1.0f]
+    //! Generate pseudo random value in interval [0.0f, 1.0f)
     [[nodiscard]] float next_f() noexcept {
-        constexpr auto FMaxUInt32 = static_cast<float>(u32(0xFFFFFFFFU));
-        return static_cast<float>(next()) / FMaxUInt32;
+        //One mantissa worth of noise, scaled by an exact power of two (never rounds to 1.0f)
+        return static_cast<float>(next_u64() >> 40U) * 0x1.0p-24F;
     }
 
-    //! Generate pseudo random value in interval (0.0, 1.0]
+    //! Generate pseudo random value in interval [0.0, 1.0)
     [[nodiscard]] double next_d() noexcept {
-        constexpr auto DMaxUInt32 = static_cast<double>(u32(0xFFFFFFFFU));
-        return static_cast<double>(next()) / DMaxUInt32;
+        //One mantissa worth of noise, scaled by an exact power of two (never rounds to 1.0)
+        return static_cast<double>(next_u64() >> 11U) * 0x1.0p-53;
     }
 
 private:
-    [[nodiscard]] rand_position_t new_seed() noexcept;
-    [[nodiscard]] rand_position_t pos() noexcept;
+    void new_seed() noexcept;
 
 private:
-    rand_seed_t     m_seed     = 0U; //!< Seed of this rand instance
-    rand_position_t m_position = 0U; //!< Position to generate the next noise from
+    rand_seed_t m_state = 0U; //!< Seed and position of this rand instance, merged
 };
+
+static_assert(sizeof(SklRand) <= sizeof(void*), "SklRand must fit the skl_tls small buffer optimization");
 
 //! [LibInit][ThreadLocal] Get the thread local instance of SklRand
 [[nodiscard]] SklRand& get_thread_rand() noexcept;

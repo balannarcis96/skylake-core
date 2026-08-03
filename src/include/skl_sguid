@@ -110,24 +110,25 @@ constexpr void copy_sguid_raw(const SGUID_raw_t in, SGUID_raw_t out) noexcept {
     }
 }
 
-//! [LibInit][ThreadLocal] Generate a new random small GUID (4 bytes)
+//! [ThreadLocal] Generate a new random small GUID (4 bytes)
 //! \return A new SGUID with all 4 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note High quality randomness, suitable for general use
+//! \note Drawn from the kernel CSPRNG through the thread local buffer (see skl_secure_rand)
+//! \note UNPREDICTABLE, but see the collision warning below
 //! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID make_sguid() noexcept;
 
 //! [LibInit][ThreadLocal] Generate a new random small GUID (fast)
 //! \return A new SGUID with all 4 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note Single u32 random call, fastest SGUID generation
+//! \note Uses thread-local SklRand (requires LibInit), single u32 draw
+//! \warning PREDICTABLE - SklRand is not a CSPRNG, never use for security bearing ids
 //! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID make_sguid_fast() noexcept;
 
 //! Generate a new random small GUID (global, non-thread-local)
 //! \return A new SGUID with all 4 bytes randomized
-//! \note Creates a new SklRand instance on each call (slower than make_sguid)
+//! \note Goes straight to getrandom(2) on every call, prefer make_sguid()
 //! \note Does not require thread-local initialization
+//! \note UNPREDICTABLE, same guarantee as make_sguid()
 //! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID g_make_sguid() noexcept;
 
@@ -135,6 +136,7 @@ constexpr void copy_sguid_raw(const SGUID_raw_t in, SGUID_raw_t out) noexcept {
 //! \return A new SGUID with all 4 bytes randomized
 //! \note Creates a new SklRand instance on each call (slower than make_sguid_fast)
 //! \note Does not require thread-local initialization
+//! \warning PREDICTABLE, same caveat as make_sguid_fast()
 //! \warning 4-byte GUIDs have higher collision probability - use GUID for critical uniqueness
 [[nodiscard]] SGUID g_make_sguid_fast() noexcept;
 } // namespace skl

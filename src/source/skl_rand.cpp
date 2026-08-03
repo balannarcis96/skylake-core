@@ -1,10 +1,10 @@
 //!
 //! \file skl_rand
 //!
-//! \source https://youtu.be/LWFzPP8ZbdU?t=2817
-//!
 //! \license Licensed under the MIT License. See LICENSE for details.
 //!
+#include <sys/random.h>
+
 #include <tune_skl_core_public.h>
 
 #include "skl_rand"
@@ -12,63 +12,50 @@
 #include "skl_epoch"
 
 namespace skl::skl_rand_internals {
-u32 skl_rand(rand_position_t f_pos, rand_seed_t f_seed) noexcept {
-    constexpr u32 CNoise_1 = Squirrel1_NOISE1;
-    constexpr u32 CNoise_2 = Squirrel1_NOISE2;
-    constexpr u32 CNoise_3 = Squirrel1_NOISE3;
+u64 skl_rand(rand_position_t f_pos, rand_seed_t f_seed) noexcept {
+    //Odd stride -> bijective in the position, so this agrees exactly with SklRand::next_u64()
+    //walking the same stream (state_n == seed + n * stride)
+    static_assert(1ULL == (SklRandStride & 1ULL), "SklRandStride must be odd");
 
-    auto result = f_pos;
-
-    //Apply noise pass 1
-    result *= CNoise_1;
-    result ^= (result >> 8U);
-
-    //Apply seed
-    result += f_seed;
-
-    //Apply noise pass 2
-    result += CNoise_2;
-    result ^= (result << 8U);
-
-    //Apply noise pass 3
-    result *= CNoise_3;
-    result ^= (result >> 8U);
-
-    return result;
+    return skl_finalize((f_pos * SklRandStride) + f_seed);
 }
 
-u32 skl_rand_2d(i32 f_x, i32 f_y, rand_seed_t f_seed) noexcept {
-    constexpr u32 CPrime{Squirrel3_2D_PRIME};
-    return skl_rand(f_x + (i32(CPrime) * f_y), f_seed);
+u64 skl_rand_2d(i32 f_x, i32 f_y, rand_seed_t f_seed) noexcept {
+    constexpr u64 CPrime{SklRand2D_PRIME};
+
+    const auto x = static_cast<u64>(static_cast<i64>(f_x));
+    const auto y = static_cast<u64>(static_cast<i64>(f_y));
+
+    return skl_rand(x + (CPrime * y), f_seed);
 }
 
-u32 skl_rand_3d(i32 f_x, i32 f_y, i32 f_z, rand_seed_t f_seed) noexcept {
-    constexpr u32 CPrime_1{Squirrel3_3D_PRIME1};
-    constexpr u32 CPrime_2{Squirrel3_3D_PRIME2};
-    return skl_rand(f_x + (i32(CPrime_1) * f_y) + (i32(CPrime_2) * f_z), f_seed);
+u64 skl_rand_3d(i32 f_x, i32 f_y, i32 f_z, rand_seed_t f_seed) noexcept {
+    constexpr u64 CPrime_1{SklRand3D_PRIME1};
+    constexpr u64 CPrime_2{SklRand3D_PRIME2};
+
+    const auto x = static_cast<u64>(static_cast<i64>(f_x));
+    const auto y = static_cast<u64>(static_cast<i64>(f_y));
+    const auto z = static_cast<u64>(static_cast<i64>(f_z));
+
+    return skl_rand(x + (CPrime_1 * y) + (CPrime_2 * z), f_seed);
 }
 } // namespace skl::skl_rand_internals
 
 SKL_MAKE_TLS_SINGLETON(skl::SklRand, TLSRand)
 
 namespace skl {
-rand_position_t SklRand::new_seed() noexcept {
-    //Use the time value as the seed
-    const auto current_epoch_time = get_current_epoch_time();
+void SklRand::new_seed() noexcept {
+    rand_seed_t state;
 
-    m_seed     = static_cast<rand_seed_t>(current_epoch_time + __rdtsc());
-    m_position = 1U;
-
-    return m_position;
-}
-
-rand_position_t SklRand::pos() noexcept {
-    //If reached max position for this seed, reseed
-    if ((m_position + 1U) == 0xFFFFFFFFU) {
-        return new_seed();
+    //Kernel CSPRNG - a full 64 bits of real entropy, so distinct streams only collide at the
+    //2^32 birthday bound instead of the ~2^16 the clock+tsc fallback is worth
+    if (static_cast<ssize_t>(sizeof(state)) != ::getrandom(&state, sizeof(state), GRND_NONBLOCK)) {
+        //Entropy pool not ready yet (very early boot) - fall back to the clock and the tsc
+        constexpr u64 CGoldenRatio = 0x9E3779B97F4A7C15ULL;
+        state = (static_cast<u64>(get_current_epoch_time()) * CGoldenRatio) ^ static_cast<u64>(__rdtsc());
     }
 
-    [[likely]] return ++m_position;
+    m_state = state;
 }
 
 SklRand& get_thread_rand() noexcept {

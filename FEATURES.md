@@ -69,10 +69,35 @@
     // See <skl_fsm_example>
     ```
 - **Guid**
-    - 4,16 bytes guids
+    - 4,8,16 bytes guids
+    - The plain factories draw from the CSPRNG (`skl_secure_rand`) and are unpredictable, so they
+      are safe for security bearing ids. The `_fast` factories draw from `SklRand`, which is
+      **not** a CSPRNG - never use those for anything a third party presents back as proof
     ```cpp
-    const GUID guid = skl::make_guid();
-    const SGUID sguid = skl::make_sguid();
+    const GUID guid = skl::make_guid();          // csprng, ~6ns, use this by default
+    const SGUID sguid = skl::make_sguid();       // csprng
+    const GUID quick = skl::make_guid_fast();    // SklRand, ~1.4ns, PREDICTABLE
+    ```
+- **SecureRand**
+    - Per thread AES-128-CTR DRBG with fast key erasure, the construction the linux kernel and
+      arc4random use (AES instead of ChaCha20, since AES-NI is guaranteed on target)
+    - **No syscalls on the steady state path.** One 16 byte `getrandom(2)` seed per thread at
+      `skl_core_init_thread()`, then userspace AES forever. Measured: 5 syscalls total for
+      1.4M guids across 5 threads
+    - Requires AES-NI (asserted at seed time, no software fallback by design)
+    - **NOT fork safe - see the process model constraints in README.md**
+    ```cpp
+    skl::secure_random_bytes(buffer, size);      // thread local drbg, no syscall
+    skl::g_secure_random_bytes(buffer, size);    // stateless, syscalls, fork safe
+    ```
+- **Rand**
+    - `SklRand` - very fast non cryptographic noise rng, 8 byte state (fits the ThreadLocal
+      small buffer optimization), exact 2^64 period, seeded from the kernel CSPRNG
+    - **Not a CSPRNG** - the state is recoverable from enough outputs. Gameplay rolls, jitter
+      and sampling only
+    ```cpp
+    auto& rng = skl::get_thread_rand();
+    const u32 roll = rng.next_range(1u, 100u);
     ```
 - **Hash**
     - SipHash impl

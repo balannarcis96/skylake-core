@@ -18,29 +18,35 @@
                             "value": "512U",
                             "type": "u32"
                         },
-                        "Squirrel1_NOISE1": {
-                            "value": "0x68E31DA4U",
-                            "type": "u32"
+                        "SklRandStride": {
+                            "value": "0x9E3779B97F4A7C15ULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand state stride (position multiplier in the stateless form). MUST BE ODD - an even value drops the top bits of the position and shortens the stream period below 2^64"
                         },
-                        "Squirrel1_NOISE2": {
-                            "value": "0xB5297A4DU",
-                            "type": "u32"
+                        "SklRandMul_MIX1": {
+                            "value": "0xBF58476D1CE4E5B9ULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand finalizer multiplier 1. MUST BE ODD"
                         },
-                        "Squirrel1_NOISE3": {
-                            "value": "0x1B56C4E9U",
-                            "type": "u32"
+                        "SklRandMul_MIX2": {
+                            "value": "0x94D049BB133111EBULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand finalizer multiplier 2. MUST BE ODD"
                         },
-                        "Squirrel3_2D_PRIME": {
-                            "value": "1913646613U",
-                            "type": "u32"
+                        "SklRand2D_PRIME": {
+                            "value": "0xD6E8FEB86659FD93ULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand 2d coordinate mixing prime"
                         },
-                        "Squirrel3_3D_PRIME1": {
-                            "value": "1206686359U",
-                            "type": "u32"
+                        "SklRand3D_PRIME1": {
+                            "value": "0xA24BAED4963EE407ULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand 3d coordinate mixing prime 1"
                         },
-                        "Squirrel3_3D_PRIME2": {
-                            "value": "1589711413U",
-                            "type": "u32"
+                        "SklRand3D_PRIME2": {
+                            "value": "0x9FB21C651E98DF25ULL",
+                            "type": "u64",
+                            "desc": "[Tune] skl_rand 3d coordinate mixing prime 2"
                         },
                         "CSerializedLoggerThreadBufferSize": {
                             "value": "4096U",

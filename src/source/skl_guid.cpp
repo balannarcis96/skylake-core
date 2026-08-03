@@ -10,6 +10,7 @@
 #include "skl_sguid"
 #include "skl_sguid64"
 #include "skl_rand"
+#include "skl_secure_rand"
 
 namespace {
 thread_local char g_string_buffer[64u];
@@ -17,43 +18,34 @@ thread_local char g_string_buffer[64u];
 
 namespace skl {
 GUID make_guid() noexcept {
-    SklRand& rand{get_thread_rand()};
-    byte     rand_bytes[GUID::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[GUID::CSize];
+    secure_random_bytes(rand_bytes, GUID::CSize);
     return {rand_bytes};
 }
 
 GUID make_guid_fast() noexcept {
     SklRand&  rand{get_thread_rand()};
-    const u64 lo = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
-    const u64 hi = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 lo = rand.next_u64();
+    const u64 hi = rand.next_u64();
     return {lo, hi};
 }
 
 GUID g_make_guid() noexcept {
-    SklRand rand{};
-    byte    rand_bytes[GUID::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[GUID::CSize];
+    g_secure_random_bytes(rand_bytes, GUID::CSize);
     return {rand_bytes};
 }
 
 GUID g_make_guid_fast() noexcept {
     SklRand   rand{};
-    const u64 lo = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
-    const u64 hi = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 lo = rand.next_u64();
+    const u64 hi = rand.next_u64();
     return {lo, hi};
 }
 
 SGUID make_sguid() noexcept {
-    SklRand& rand{get_thread_rand()};
-    byte     rand_bytes[SGUID::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[SGUID::CSize];
+    secure_random_bytes(rand_bytes, SGUID::CSize);
     return {rand_bytes};
 }
 
@@ -63,11 +55,8 @@ SGUID make_sguid_fast() noexcept {
 }
 
 SGUID g_make_sguid() noexcept {
-    SklRand rand{};
-    byte    rand_bytes[SGUID::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[SGUID::CSize];
+    g_secure_random_bytes(rand_bytes, SGUID::CSize);
     return {rand_bytes};
 }
 
@@ -190,32 +179,26 @@ skl_string_view SGUID::to_string() const noexcept {
 }
 
 SGUID64 make_sguid64() noexcept {
-    SklRand& rand{get_thread_rand()};
-    byte     rand_bytes[SGUID64::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[SGUID64::CSize];
+    secure_random_bytes(rand_bytes, SGUID64::CSize);
     return {rand_bytes};
 }
 
 SGUID64 make_sguid64_fast() noexcept {
     SklRand&  rand{get_thread_rand()};
-    const u64 value = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 value = rand.next_u64();
     return {value};
 }
 
 SGUID64 g_make_sguid64() noexcept {
-    SklRand rand{};
-    byte    rand_bytes[SGUID64::CSize];
-    for (auto& rand_byte : rand_bytes) {
-        rand_byte = rand.next_range(0U, 0xFFU);
-    }
+    byte rand_bytes[SGUID64::CSize];
+    g_secure_random_bytes(rand_bytes, SGUID64::CSize);
     return {rand_bytes};
 }
 
 SGUID64 g_make_sguid64_fast() noexcept {
     SklRand   rand{};
-    const u64 value = static_cast<u64>(rand.next()) | (static_cast<u64>(rand.next()) << 32u);
+    const u64 value = rand.next_u64();
     return {value};
 }
 

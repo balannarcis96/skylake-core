@@ -126,24 +126,25 @@ constexpr void copy_sguid64_raw(const SGUID64_raw_t in, SGUID64_raw_t out) noexc
     }
 }
 
-//! [LibInit][ThreadLocal] Generate a new random SGUID64 (8 bytes)
+//! [ThreadLocal] Generate a new random SGUID64 (8 bytes)
 //! \return A new SGUID64 with all 8 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note High quality randomness, suitable for general use
+//! \note Drawn from the kernel CSPRNG through the thread local buffer (see skl_secure_rand)
+//! \note UNPREDICTABLE, safe for security bearing ids
 //! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 make_sguid64() noexcept;
 
 //! [LibInit][ThreadLocal] Generate a new random SGUID64 (fast)
 //! \return A new SGUID64 with all 8 bytes randomized
-//! \note Uses thread-local random number generator (requires LibInit)
-//! \note Uses 2x u32 random calls instead of 8x byte-range calls
+//! \note Uses thread-local SklRand (requires LibInit), single u64 draw
+//! \warning PREDICTABLE - SklRand is not a CSPRNG, never use for security bearing ids
 //! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 make_sguid64_fast() noexcept;
 
 //! Generate a new random SGUID64 (global, non-thread-local)
 //! \return A new SGUID64 with all 8 bytes randomized
-//! \note Creates a new SklRand instance on each call (slower than make_sguid64)
+//! \note Goes straight to getrandom(2) on every call, prefer make_sguid64()
 //! \note Does not require thread-local initialization
+//! \note UNPREDICTABLE, same guarantee as make_sguid64()
 //! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 g_make_sguid64() noexcept;
 
@@ -151,6 +152,7 @@ constexpr void copy_sguid64_raw(const SGUID64_raw_t in, SGUID64_raw_t out) noexc
 //! \return A new SGUID64 with all 8 bytes randomized
 //! \note Creates a new SklRand instance on each call (slower than make_sguid64_fast)
 //! \note Does not require thread-local initialization
+//! \warning PREDICTABLE, same caveat as make_sguid64_fast()
 //! \note 8-byte GUIDs offer better collision resistance than SGUID but less than full GUID
 [[nodiscard]] SGUID64 g_make_sguid64_fast() noexcept;
 } // namespace skl

@@ -1,0 +1,53 @@
+//!
+//! \file skl_secure_rand
+//!
+//! \brief cryptographically secure random bytes, no syscalls on the steady state path
+//!
+//! \license Licensed under the MIT License. See LICENSE for details.
+//!
+#pragma once
+
+#include "skl_int"
+
+namespace skl {
+//! Size of the thread local DRBG output buffer
+//! \remark Must be a multiple of 128 (the 8 block AES pipeline stride)
+//! \remark 4KiB measured marginally better than 1KiB (1.87ns vs 2.11ns per 16 bytes) - past
+//!         that the refill cost is already amortized into noise
+constexpr u64 CSecureRandBufferSize = 4096ULL;
+
+//! [ThreadLocal] Fill f_target with f_size cryptographically secure random bytes
+//!
+//! \remark Backed by a per thread AES-128-CTR DRBG with fast key erasure - the same
+//!         construction the linux kernel and arc4random use, with ChaCha20 swapped for AES
+//!         because AES-NI is guaranteed on every supported target
+//!
+//! \remark NO SYSCALLS. The only getrandom(2) is the 16 byte seed drawn once per thread by
+//!         skl_core_init_thread(). Everything after that is AES-NI in userspace
+//!
+//! \remark Issued bytes are zeroed in the buffer, and each refill rekeys from its own leading
+//!         block, so the state cannot be rolled backwards to reproduce anything already
+//!         handed out
+//!
+//! \remark ~1.9ns per 16 bytes amortized
+//!
+//! \warning NOT FORK SAFE, BY DESIGN. The DRBG state is ordinary thread local memory, so a
+//!          forked child inherits its parent's key and counter and will produce the exact
+//!          same byte stream. skylake-core does not support fork(). Do not fork a process
+//!          that has issued secure bytes and then issue more from either side. There is
+//!          deliberately no pthread_atfork handler and no MADV_WIPEONFORK - carrying that
+//!          machinery would imply a fork contract this library does not offer.
+//!          If a child process genuinely needs secure bytes, it must exec() first, or call
+//!          g_secure_random_bytes() which holds no state.
+//!
+//! \warning Requires AES-NI. Asserted permanently at seed time, there is no software
+//!          fallback - a fallback would either be slow or not be a CSPRNG
+void secure_random_bytes(void* f_target, u64 f_size) noexcept;
+
+//! Fill f_target with f_size cryptographically secure random bytes (global, non-thread-local)
+//! \remark Holds no state, goes straight to getrandom(2) on every call (~365ns for 16 bytes)
+//! \remark THIS ONE SYSCALLS - it exists for callers with no thread local state, and is the
+//!         only secure source that is safe to use in a forked child. Prefer
+//!         secure_random_bytes() everywhere else
+void g_secure_random_bytes(void* f_target, u64 f_size) noexcept;
+} // namespace skl
