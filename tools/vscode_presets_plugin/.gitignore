@@ -1,0 +1,8 @@
+node_modules/
+*.vsix
+
+# The repository root ignores `.vscode` everywhere. This extension ships its own
+# launch config, so re-include it here. The directory has to be un-excluded
+# first, otherwise git never descends into it to see the file rule.
+!.vscode/
+!.vscode/launch.json

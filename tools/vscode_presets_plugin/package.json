@@ -1,0 +1,433 @@
+{
+    "name": "skylake-tuning-presets",
+    "displayName": "Skylake Tuning Presets",
+    "description": "Manage Skylake CMake tuning preset JSON files: rich editor, cross-file resolution with provenance, search and lint.",
+    "version": "1.1.0",
+    "publisher": "skylake",
+    "license": "MIT",
+    "author": {
+        "name": "Balan Narcis",
+        "email": "balannarcis96@gmail.com"
+    },
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Visualization",
+        "Linters"
+    ],
+    "keywords": [
+        "skylake",
+        "cmake",
+        "tuning",
+        "presets",
+        "constexpr"
+    ],
+    "main": "./src/extension.js",
+    "scripts": {
+        "test": "node test/run.js",
+        "verify": "node test/verify.js",
+        "integration": "node test/integration.js",
+        "render": "node test/render.js",
+        "contract": "node test/ui-contract.js"
+    },
+    "activationEvents": [
+        "onLanguage:json",
+        "onLanguage:jsonc",
+        "workspaceContains:**/*_preset.json",
+        "workspaceContains:**/*_presets.json"
+    ],
+    "contributes": {
+        "customEditors": [
+            {
+                "viewType": "skylakeTuning.presetEditor",
+                "displayName": "Skylake Tuning Preset",
+                "selector": [
+                    {
+                        "filenamePattern": "**/*_preset.json"
+                    },
+                    {
+                        "filenamePattern": "**/*_presets.json"
+                    }
+                ],
+                "priority": "default"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "skylakeTuning",
+                    "title": "Skylake Tuning",
+                    "icon": "media/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "skylakeTuning": [
+                {
+                    "id": "skylakeTuning.tree",
+                    "name": "Targets & Presets",
+                    "icon": "media/icon.svg"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "skylakeTuning.tree",
+                "contents": "No Skylake tuning preset files were found in this workspace.\n\nFiles are detected by schema shape: a top-level `presets[]` array whose entries contain `config[]` blocks with a `target_name`.\n\n[Rescan Workspace](command:skylakeTuning.refreshIndex)"
+            }
+        ],
+        "commands": [
+            {
+                "command": "skylakeTuning.openEditor",
+                "title": "Open in Tuning Editor",
+                "category": "Skylake Tuning",
+                "icon": "$(table)"
+            },
+            {
+                "command": "skylakeTuning.reopenAsText",
+                "title": "Reopen as Text",
+                "category": "Skylake Tuning",
+                "icon": "$(json)"
+            },
+            {
+                "command": "skylakeTuning.refreshIndex",
+                "title": "Rescan Workspace",
+                "category": "Skylake Tuning",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "skylakeTuning.searchKeys",
+                "title": "Search Keys…",
+                "category": "Skylake Tuning",
+                "icon": "$(search)"
+            },
+            {
+                "command": "skylakeTuning.resolveKey",
+                "title": "Resolve Key Across Presets…",
+                "category": "Skylake Tuning",
+                "icon": "$(list-tree)"
+            },
+            {
+                "command": "skylakeTuning.comparePresets",
+                "title": "Compare Two Presets…",
+                "category": "Skylake Tuning",
+                "icon": "$(diff)"
+            },
+            {
+                "command": "skylakeTuning.showReport",
+                "title": "Show Workspace Report",
+                "category": "Skylake Tuning",
+                "icon": "$(output)"
+            },
+            {
+                "command": "skylakeTuning.validateAll",
+                "title": "Validate All Preset Files",
+                "category": "Skylake Tuning",
+                "icon": "$(check-all)"
+            },
+            {
+                "command": "skylakeTuning.revealNode",
+                "title": "Reveal in Text Editor",
+                "category": "Skylake Tuning",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "skylakeTuning.ctx.editValue",
+                "title": "Change Value…"
+            },
+            {
+                "command": "skylakeTuning.ctx.editMeta",
+                "title": "Edit Type / Description…"
+            },
+            {
+                "command": "skylakeTuning.ctx.toggleOutput",
+                "title": "Toggle Output (public / private)"
+            },
+            {
+                "command": "skylakeTuning.ctx.overrideIn",
+                "title": "Override in Preset…"
+            },
+            {
+                "command": "skylakeTuning.ctx.moveToGroup",
+                "title": "Move to Group…"
+            },
+            {
+                "command": "skylakeTuning.ctx.renameKey",
+                "title": "Rename Key…"
+            },
+            {
+                "command": "skylakeTuning.ctx.duplicateKey",
+                "title": "Duplicate Key…"
+            },
+            {
+                "command": "skylakeTuning.ctx.deleteKey",
+                "title": "Delete Key"
+            },
+            {
+                "command": "skylakeTuning.ctx.gotoDefault",
+                "title": "Go to Definition in Default"
+            },
+            {
+                "command": "skylakeTuning.ctx.resolveKey",
+                "title": "Resolve Across Presets"
+            },
+            {
+                "command": "skylakeTuning.ctx.copyKey",
+                "title": "Copy Key Name"
+            },
+            {
+                "command": "skylakeTuning.ctx.copyValue",
+                "title": "Copy Value"
+            },
+            {
+                "command": "skylakeTuning.ctx.revealInText",
+                "title": "Reveal in Text Editor"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "skylakeTuning.ctx.editValue",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.editMeta",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.toggleOutput",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.overrideIn",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.moveToGroup",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.renameKey",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.duplicateKey",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.deleteKey",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.gotoDefault",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.resolveKey",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.copyKey",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.copyValue",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.ctx.revealInText",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.revealNode",
+                    "when": "false"
+                },
+                {
+                    "command": "skylakeTuning.reopenAsText",
+                    "when": "false"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "skylakeTuning.openEditor",
+                    "when": "resourceExtname == .json",
+                    "group": "navigation@30"
+                }
+            ],
+            "editor/title": [
+                {
+                    "command": "skylakeTuning.openEditor",
+                    "when": "resourceExtname == .json && activeEditor == workbench.editors.files.textFileEditor",
+                    "group": "navigation@1"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "skylakeTuning.searchKeys",
+                    "when": "view == skylakeTuning.tree",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "skylakeTuning.showReport",
+                    "when": "view == skylakeTuning.tree",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "skylakeTuning.refreshIndex",
+                    "when": "view == skylakeTuning.tree",
+                    "group": "navigation@3"
+                },
+                {
+                    "command": "skylakeTuning.comparePresets",
+                    "when": "view == skylakeTuning.tree",
+                    "group": "1_actions@1"
+                },
+                {
+                    "command": "skylakeTuning.validateAll",
+                    "when": "view == skylakeTuning.tree",
+                    "group": "1_actions@2"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "skylakeTuning.openEditor",
+                    "when": "view == skylakeTuning.tree && viewItem =~ /file/",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "skylakeTuning.revealNode",
+                    "when": "view == skylakeTuning.tree && viewItem =~ /key|file/",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "skylakeTuning.resolveKey",
+                    "when": "view == skylakeTuning.tree && viewItem =~ /key/",
+                    "group": "1_actions@1"
+                }
+            ],
+            "webview/context": [
+                {
+                    "command": "skylakeTuning.ctx.editValue",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "1_edit@1"
+                },
+                {
+                    "command": "skylakeTuning.ctx.editMeta",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "1_edit@2"
+                },
+                {
+                    "command": "skylakeTuning.ctx.toggleOutput",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "1_edit@3"
+                },
+                {
+                    "command": "skylakeTuning.ctx.overrideIn",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "2_move@1"
+                },
+                {
+                    "command": "skylakeTuning.ctx.moveToGroup",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "2_move@2"
+                },
+                {
+                    "command": "skylakeTuning.ctx.renameKey",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "2_move@3"
+                },
+                {
+                    "command": "skylakeTuning.ctx.duplicateKey",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "2_move@4"
+                },
+                {
+                    "command": "skylakeTuning.ctx.deleteKey",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "2_move@5"
+                },
+                {
+                    "command": "skylakeTuning.ctx.gotoDefault",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "3_nav@1"
+                },
+                {
+                    "command": "skylakeTuning.ctx.resolveKey",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "3_nav@2"
+                },
+                {
+                    "command": "skylakeTuning.ctx.revealInText",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "3_nav@3"
+                },
+                {
+                    "command": "skylakeTuning.ctx.copyKey",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "4_copy@1"
+                },
+                {
+                    "command": "skylakeTuning.ctx.copyValue",
+                    "when": "webviewId == skylakeTuning.presetEditor && webviewSection == key",
+                    "group": "4_copy@2"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Skylake Tuning Presets",
+            "properties": {
+                "skylakeTuning.include": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "**/*_preset.json",
+                        "**/*_presets.json"
+                    ],
+                    "markdownDescription": "Glob patterns scanned for tuning preset files. A file is only indexed if it also matches the tuning preset schema."
+                },
+                "skylakeTuning.exclude": {
+                    "type": "string",
+                    "default": "**/{node_modules,build,build2,out,.git,third_party}/**",
+                    "markdownDescription": "Glob pattern excluded from the workspace scan."
+                },
+                "skylakeTuning.defaultPresetName": {
+                    "type": "string",
+                    "default": "default",
+                    "markdownDescription": "Name of the base preset layer, mirroring CMake's `SKL_TUNE_DEFAULT_PRESET`."
+                },
+                "skylakeTuning.indent": {
+                    "type": [
+                        "number",
+                        "string"
+                    ],
+                    "default": "auto",
+                    "markdownDescription": "Indent width used when writing preset files. `auto` detects it per file."
+                },
+                "skylakeTuning.diagnostics.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Report tuning preset problems in the Problems panel."
+                },
+                "skylakeTuning.diagnostics.unregisteredFiles": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Warn when a preset file is never passed to `skl_add_presets_file()` and is not a target's `DEFAULT_PRESET_FILE`, meaning CMake silently ignores it."
+                },
+                "skylakeTuning.diagnostics.redundantOverrides": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Report overrides whose value is identical to the value they inherit."
+                },
+                "skylakeTuning.editor.showInherited": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show inherited (non-overridden) keys greyed out in the preset editor."
+                }
+            }
+        }
+    }
+}
