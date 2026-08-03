@@ -85,7 +85,9 @@
       `skl_core_init_thread()`, then userspace AES forever. Measured: 5 syscalls total for
       1.4M guids across 5 threads
     - Requires AES-NI (asserted at seed time, no software fallback by design)
-    - **NOT fork safe - see the process model constraints in README.md**
+    - **NOT fork safe.** A forked child inherits the AES key + counter and replays the parent's
+      exact byte stream. This is one of 12 reasons the library does not support `fork()` at all -
+      see "Process model constraints" in README.md for the full list
     ```cpp
     skl::secure_random_bytes(buffer, size);      // thread local drbg, no syscall
     skl::g_secure_random_bytes(buffer, size);    // stateless, syscalls, fork safe
