@@ -20,6 +20,14 @@
 #    define SKL_NOINLINE [[clang::noinline]]
 #endif
 
+#ifndef SKL_COLD
+#    define SKL_COLD [[clang::noinline]] [[gnu::cold]] [[clang::preserve_most]]
+#endif
+
+#ifndef SKL_VERY_COLD
+#    define SKL_VERY_COLD [[clang::noinline]] [[gnu::cold]] [[clang::preserve_all]]
+#endif
+
 #ifndef SKL_REAL_VALUE
 #    if SKL_REAL_TYPE_DOUBLE
 #        define SKL_REAL_VALUE(x) (x)

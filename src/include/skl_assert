@@ -10,7 +10,7 @@
 #include <tune_skl_core_public.h>
 
 namespace skl_assert {
-SKL_NOINLINE [[noreturn]] [[gnu::cold]] extern void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept;
+[[clang::noinline]] [[gnu::cold]] [[clang::preserve_all]] [[noreturn]] void handle_assert_failure(const char* f_file_name, int f_line_number, const char* f_expression) noexcept;
 }
 
 #if SKL_ASSERT_LEVEL == SKL_ASSERT_LEVEL_ALL
